@@ -8,8 +8,11 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from features.database import get_connection
+from features.database.user import get_user, add_user
 from features.commands.types import Command
 from cache.user import get_user_current_stage, set_user_current_stage, unset_user_current_stage
+from util import tuple_to_dict
 
 # Map button text to command enum value
 # NOTE: Can't map to Command enum literal, must use its int representation as it must be JSON serializable
@@ -80,10 +83,13 @@ handlers: dict[str, Callable] = {
 
 # Handle /start command
 async def start(update: Update, context) -> None:
-    # TODO: Ensure user is created in database
+    user_id = update.effective_user.id
+    
+    # Create user in database
+    if not get_user(user_id):
+        add_user(user_id)
 
     # Reset current prompt if it exists, as the user may use this command to cancel
-    user_id = update.effective_user.id
     unset_user_current_stage(user_id)
 
     await show_main_menu(update)
