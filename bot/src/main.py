@@ -8,20 +8,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from mytypes import Command, CommandStage
-from features.chain import set_chain
-
-# Map user id to current selection + stage (the handler itself will be index 0, subsequent handling will increment)
-user_current_prompt: dict[int, CommandStage] = {}
-
-
-def get_user_current_prompt(user_id: int):
-    return user_current_prompt.get(user_id)
-
-
-def set_user_current_prompt(user_id: int, command: Command, stage: int):
-    user_current_prompt[user_id] = {"command": command, "stage": stage}
-
+from features.commands.types import Command
+from cache.user import get_user_current_stage, set_user_current_stage, unset_user_current_stage
 
 # Map button text to command enum value
 # NOTE: Can't map to Command enum literal, must use its int representation as it must be JSON serializable
@@ -37,8 +25,19 @@ commands: dict[str, str] = {
     "Sell": Command.SELL.value,
 }
 
+# Define the main menu keyboard layout
+main_menu_keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton(display_text, callback_data=command)]
+    for (display_text, command) in commands.items()
+])
 
-### Command handlers ###
+async def show_main_menu(update: Update):
+    await update.message.reply_text(
+        "What would you like to do today?", reply_markup=main_menu_keyboard
+    )
+
+### Command Handlers ###
+
 async def handle_wallet(query):
     """
     Wallet command: Display wallet address and balances
@@ -51,10 +50,9 @@ XSGD: 100.00
     """.strip()
     try:
         # Will raise an exception if the edit content is the same as current content. Ignore it
-        await query.edit_message_text(text=text, reply_markup=main_menu_keyboard())
+        await query.edit_message_text(text=text, reply_markup=main_menu_keyboard)
     except Exception:
         pass
-
 
 async def handle_set_chain(query):
     """
@@ -64,9 +62,15 @@ async def handle_set_chain(query):
     await query.edit_message_text("Enter chain ID:")
     user = query.from_user
     user_id = user.id
-    set_user_current_prompt(user_id, Command.SET_CHAIN, 1)
-    print(user_current_prompt)
+    set_user_current_stage(user_id, Command.SET_CHAIN, 1)
 
+
+def set_chain(user_id: int, chain_id: str):
+    # TODO: Save to database
+    pass
+
+
+### Command Handlers END ###
 
 # Map command to handler functions
 handlers: dict[str, Callable] = {
@@ -74,31 +78,15 @@ handlers: dict[str, Callable] = {
     Command.SET_CHAIN.value: handle_set_chain,
 }
 
-
-# Define the main menu keyboard layout
-def main_menu_keyboard():
-    keyboard = [
-        [InlineKeyboardButton(display_text, callback_data=command)]
-        for (display_text, command) in commands.items()
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-# Command handler to display the main menu
+# Handle /start command
 async def start(update: Update, context) -> None:
     # TODO: Ensure user is created in database
 
     # Reset current prompt if it exists, as the user may use this command to cancel
     user_id = update.effective_user.id
-    user_current_prompt.pop(user_id, "")
+    unset_user_current_stage(user_id)
 
     await show_main_menu(update)
-
-
-async def show_main_menu(update: Update):
-    await update.message.reply_text(
-        "What would you like to do today?", reply_markup=main_menu_keyboard()
-    )
 
 
 # Callback handlers for each button
@@ -116,10 +104,7 @@ async def button_callback(update: Update, context) -> None:
 async def message_handler(update: Update, context) -> None:
     user = update.effective_user
     user_id = user.id
-    current_prompt = get_user_current_prompt(user_id)
-    print("debug2")
-    print(user_id)
-    print(current_prompt)
+    current_prompt = get_user_current_stage(user_id)
 
     # Nothing to handle
     if not current_prompt:
@@ -133,8 +118,11 @@ async def message_handler(update: Update, context) -> None:
         print(f"Received message: {text}")
         await update.message.reply_text(
             f"Chain has been set to {text} Polygon (TODO: Change this)",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard,
         )
+
+        # End of stage, reset user prompt
+        unset_user_current_stage(user_id)
 
 
 def main() -> None:
