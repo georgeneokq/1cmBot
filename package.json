@@ -1,0 +1,15 @@
+{
+  "name": "ethglobal2024",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "docker compose down bot && docker compose up -d --build bot"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "prisma": "^5.19.1"
+  }
+}

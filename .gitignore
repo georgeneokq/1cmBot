@@ -1,0 +1,6 @@
+# local env files
+.env
+
+# Dependencies
+node_modules/
+__pycache__
