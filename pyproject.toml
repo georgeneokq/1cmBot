@@ -12,6 +12,9 @@ python-telegram-bot = "^21.6"
 eth-account = "^0.13.3"
 
 
+[tool.poetry.group.dev.dependencies]
+black = "^24.8.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

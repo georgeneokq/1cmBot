@@ -1,150 +1,159 @@
 from os import getenv
-import logging
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from typing import Callable
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    ContextTypes,
-    ConversationHandler,
+    CallbackQueryHandler,
     MessageHandler,
     filters,
 )
+from mytypes import Command, CommandStage
+from features.chain import set_chain
 
-# Enable logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-# set higher logging level for httpx to avoid all GET and POST requests being logged
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
-
-GENDER, PHOTO, LOCATION, BIO = range(4)
+# Map user id to current selection + stage (the handler itself will be index 0, subsequent handling will increment)
+user_current_prompt: dict[int, CommandStage] = {}
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Starts the conversation and asks the user about their gender."""
-    reply_keyboard = [["Boy", "Girl", "Other"]]
+def get_user_current_prompt(user_id: int):
+    return user_current_prompt.get(user_id)
 
+
+def set_user_current_prompt(user_id: int, command: Command, stage: int):
+    user_current_prompt[user_id] = {"command": command, "stage": stage}
+
+
+# Map button text to command enum value
+# NOTE: Can't map to Command enum literal, must use its int representation as it must be JSON serializable
+commands: dict[str, str] = {
+    "Wallet": Command.WALLET.value,
+    "Set Chain": Command.SET_CHAIN.value,
+    "Set Slippage": Command.SET_SLIPPAGE.value,
+    "Set Buy Token": Command.SET_BUY_TOKEN.value,
+    "Set Sell Token": Command.SET_SELL_TOKEN.value,
+    "Show Buy Chart": Command.SHOW_BUY_CHART.value,
+    "Show Sell Chart": Command.SHOW_SELL_CHART.value,
+    "Buy": Command.BUY.value,
+    "Sell": Command.SELL.value,
+}
+
+
+### Command handlers ###
+async def handle_wallet(query):
+    """
+    Wallet command: Display wallet address and balances
+    """
+    # TODO: Get actual token balances and show USD equivalent
+    text = """
+Wallet Address: 0x0192383492592...
+USDC: 200.00
+XSGD: 100.00
+    """.strip()
+    try:
+        # Will raise an exception if the edit content is the same as current content. Ignore it
+        await query.edit_message_text(text=text, reply_markup=main_menu_keyboard())
+    except Exception:
+        pass
+
+
+async def handle_set_chain(query):
+    """
+    Set Chain command: Get Chain ID
+    """
+    # Get chain ID from user input
+    await query.edit_message_text("Enter chain ID:")
+    user = query.from_user
+    user_id = user.id
+    set_user_current_prompt(user_id, Command.SET_CHAIN, 1)
+    print(user_current_prompt)
+
+
+# Map command to handler functions
+handlers: dict[str, Callable] = {
+    Command.WALLET.value: handle_wallet,
+    Command.SET_CHAIN.value: handle_set_chain,
+}
+
+
+# Define the main menu keyboard layout
+def main_menu_keyboard():
+    keyboard = [
+        [InlineKeyboardButton(display_text, callback_data=command)]
+        for (display_text, command) in commands.items()
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+# Command handler to display the main menu
+async def start(update: Update, context) -> None:
+    # TODO: Ensure user is created in database
+
+    # Reset current prompt if it exists, as the user may use this command to cancel
+    user_id = update.effective_user.id
+    user_current_prompt.pop(user_id, "")
+
+    await show_main_menu(update)
+
+
+async def show_main_menu(update: Update):
     await update.message.reply_text(
-        "Hi! My name is Professor Bot. I will hold a conversation with you. "
-        "Send /cancel to stop talking to me.\n\n"
-        "Are you a boy or a girl?",
-        reply_markup=ReplyKeyboardMarkup(
-            reply_keyboard, one_time_keyboard=True, input_field_placeholder="Boy or Girl?"
-        ),
+        "What would you like to do today?", reply_markup=main_menu_keyboard()
     )
 
-    return GENDER
+
+# Callback handlers for each button
+async def button_callback(update: Update, context) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    command = query.data
+    callback = handlers.get(command)
+
+    if callback:
+        await callback(query)
 
 
-async def gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Stores the selected gender and asks for a photo."""
-    user = update.message.from_user
-    logger.info("Gender of %s: %s", user.first_name, update.message.text)
-    await update.message.reply_text(
-        "I see! Please send me a photo of yourself, "
-        "so I know what you look like, or send /skip if you don't want to.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+async def message_handler(update: Update, context) -> None:
+    user = update.effective_user
+    user_id = user.id
+    current_prompt = get_user_current_prompt(user_id)
+    print("debug2")
+    print(user_id)
+    print(current_prompt)
 
-    return PHOTO
+    # Nothing to handle
+    if not current_prompt:
+        await show_main_menu(update)
+        return
 
+    text = update.message.text
 
-async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Stores the photo and asks for a location."""
-    user = update.message.from_user
-    photo_file = await update.message.photo[-1].get_file()
-    await photo_file.download_to_drive("user_photo.jpg")
-    logger.info("Photo of %s: %s", user.first_name, "user_photo.jpg")
-    await update.message.reply_text(
-        "Gorgeous! Now, send me your location please, or send /skip if you don't want to."
-    )
-
-    return LOCATION
-
-
-async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Skips the photo and asks for a location."""
-    user = update.message.from_user
-    logger.info("User %s did not send a photo.", user.first_name)
-    await update.message.reply_text(
-        "I bet you look great! Now, send me your location please, or send /skip."
-    )
-
-    return LOCATION
-
-
-async def location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Stores the location and asks for some info about the user."""
-    user = update.message.from_user
-    user_location = update.message.location
-    logger.info(
-        "Location of %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude
-    )
-    await update.message.reply_text(
-        "Maybe I can visit you sometime! At last, tell me something about yourself."
-    )
-
-    return BIO
-
-
-async def skip_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Skips the location and asks for info about the user."""
-    user = update.message.from_user
-    logger.info("User %s did not send a location.", user.first_name)
-    await update.message.reply_text(
-        "You seem a bit paranoid! At last, tell me something about yourself."
-    )
-
-    return BIO
-
-
-async def bio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Stores the info about the user and ends the conversation."""
-    user = update.message.from_user
-    logger.info("Bio of %s: %s", user.first_name, update.message.text)
-    await update.message.reply_text("Thank you! I hope we can talk again some day.")
-
-    return ConversationHandler.END
-
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancels and ends the conversation."""
-    user = update.message.from_user
-    logger.info("User %s canceled the conversation.", user.first_name)
-    await update.message.reply_text(
-        "Bye! I hope we can talk again some day.", reply_markup=ReplyKeyboardRemove()
-    )
-
-    return ConversationHandler.END
+    if current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1:
+        set_chain(user_id, text)
+        print(f"Received message: {text}")
+        await update.message.reply_text(
+            f"Chain has been set to {text} Polygon (TODO: Change this)",
+            reply_markup=main_menu_keyboard(),
+        )
 
 
 def main() -> None:
-    """Run the bot."""
-    # Create the Application and pass it your bot's token.
-    bot_token = getenv('BOT_TOKEN')
+    # Replace 'TOKEN' with your bot token
+    bot_token = getenv("BOT_TOKEN")
     application = Application.builder().token(bot_token).build()
 
-    # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            GENDER: [MessageHandler(filters.Regex("^(Boy|Girl|Other)$"), gender)],
-            PHOTO: [MessageHandler(filters.PHOTO, photo), CommandHandler("skip", skip_photo)],
-            LOCATION: [
-                MessageHandler(filters.LOCATION, location),
-                CommandHandler("skip", skip_location),
-            ],
-            BIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, bio)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
+    # Start command to display the main menu
+    application.add_handler(CommandHandler("start", start))
 
-    application.add_handler(conv_handler)
+    # CallbackQueryHandler to handle button presses
+    application.add_handler(CallbackQueryHandler(button_callback))
+
+    # MessageHandler to handle arbitrary messages, based on user's main menu selection
+    application.add_handler(MessageHandler(filters.ALL, message_handler))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
