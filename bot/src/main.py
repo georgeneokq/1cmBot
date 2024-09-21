@@ -111,18 +111,22 @@ async def handle_set_chain(query):
 
 
 async def set_chain(update: Update, user_id: int, text: str):
-    chain = text
+    chain_id = text
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET chain_id=%s, buy_token_address=NULL, sell_token_address=NULL, buy_token_name=NULL, sell_token_name=NULL WHERE id=%s", (chain, user_id))
+    cursor.execute("UPDATE users SET chain_id=%s, buy_token_address=NULL, sell_token_address=NULL, buy_token_name=NULL, sell_token_name=NULL WHERE id=%s", (chain_id, user_id))
     conn.commit()
     cursor.close()
     conn.close()
 
+    # Get chain name if known
+    chain_info = networks.get(int(chain_id))
+    chain_name = chain_info["name"] if chain_info else chain_id
+
     user = get_user(user_id)
     assert user is not None
     await update.message.reply_text(
-        f"Your chain has been updated to {chain}!\nYour token addresses have been reset.\n\nWhat else would you like to do today?",
+        f"Your chain has been updated to {chain_name}!\nYour token addresses have been reset.\n\nWhat else would you like to do today?",
         reply_markup=main_menu_keyboard(user),
     )
 
