@@ -8,9 +8,9 @@ def tuples_to_dicts(tups, names: list[str]):
     return list(map(lambda tup: tuple_to_dict(tup, names), tups))
 
 
-def parse_decimal(value, decimal):
+def parse_decimal(value, decimal) -> float:
     """ Parse bigint into human amount. """
-    return value / (10**decimal)
+    return int(value) / (10**decimal)
 
 
 def format_decimal(value, decimal):

@@ -1,4 +1,5 @@
 from os import getenv
+from eth_account import Account
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.exceptions import TransactionNotFound
@@ -7,6 +8,7 @@ from constants import erc20_abi
 from util import parse_decimal, format_decimal
 from constants import networks
 from oneinch_api import OneInchAPI
+
 
 def initialise_w3(rpc):
     provider = rpc
@@ -22,8 +24,18 @@ def execute_transaction(rpc, transaction, private_key):
     account = w3.eth.account.from_key(private_key)
 
     # Estimate Gas
-    transaction = {**transaction, "from":account.address, "nonce": w3.eth.get_transaction_count(str(account.address))}
+    print("DEBUG!")
+    print(transaction)
+    transaction = {
+        **transaction,
+        "from": account.address,
+        "nonce": w3.eth.get_transaction_count(str(account.address)),
+    }
+    print("DEBUG GAS!!")
+    print(transaction)
     gas = w3.eth.estimate_gas(transaction)
+    print("DEBUG GAS 2!")
+    print(gas)
     transaction = {
         **transaction,
         "nonce": w3.eth.get_transaction_count(str(account.address)),
@@ -52,7 +64,9 @@ def withdraw_tokens(rpc, chain_id, token_address, to_address, private_key, amoun
     token_info = oneinch.get_token_info(chain_id, token_address)
     token_decimals = token_info["decimals"]
     account = w3.eth.account.from_key(private_key)
-    token_contract = w3.eth.contract(address=token_address, abi=erc20_abi)
+    token_contract = w3.eth.contract(
+        address=Web3.to_checksum_address(token_address), abi=erc20_abi
+    )
     if amount == 0:
         amount = token_contract.functions.balanceOf(account.address).call()
     else:
@@ -60,13 +74,8 @@ def withdraw_tokens(rpc, chain_id, token_address, to_address, private_key, amoun
     # Get the nonce (transaction count) for the sending account
     nonce = w3.eth.get_transaction_count(account.address)
     transaction = token_contract.functions.transfer(
-            to_address,
-            amount
-        ).build_transaction({
-            "from": account.address,
-            "nonce": nonce
-    })
-    print(transaction)
+        Web3.to_checksum_address(to_address), amount
+    ).build_transaction({"from": account.address, "nonce": nonce})
     signed_txn = w3.eth.account.sign_transaction(transaction, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed_txn.raw_transaction)
     for i in range(60):
@@ -83,14 +92,33 @@ def withdraw_tokens(rpc, chain_id, token_address, to_address, private_key, amoun
             return 0
 
 
+def get_wallet_details(derivation_path_int: int, master_key: str | None = None):
+    """
+    Wallet address calculated from derivation path.
+    Show balances of all tokens tied to this wallet.
+    Show USD equivalent total of all tokens.
+    """
+    if not master_key:
+        master_key = getenv("DERIVATION_MASTER_KEY")
+    derivation_path_str = f"m/0'/{derivation_path_int}"
+    account = Account.from_mnemonic(master_key, derivation_path_str)
+
+    return {"address": account.address, "private_key": account.key}
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from oneinch_api import OneInchAPI
     from util import parse_decimal, format_decimal
+
     oneinch = OneInchAPI()
     rpc = networks[137]["rpc"]
-    withdraw_tokens(rpc, 137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xB73f259E3d061e21b8725950d8aEFc8449A64c35", getenv("PK"))
+    withdraw_tokens(
+        rpc,
+        137,
+        "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "0xB73f259E3d061e21b8725950d8aEFc8449A64c35",
+        getenv("PK"),
+    )
     # Example 1: Swapping 10cents USD to XSGD on polygon network
     # chain_id = 137
     # Find USDC and XSGD (simulate user searching using the search token function)
@@ -119,9 +147,6 @@ if __name__ == '__main__':
     #   )
     #   print(calldata)
     #   receipt = execute_transaction(calldata["tx"], getenv("PK"))
-
-
-
 
 
 """

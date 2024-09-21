@@ -1,7 +1,7 @@
 from os import getenv
 
 ALCHEMY_API_KEY = getenv("ALCHEMY_API_KEY", "")
-USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+USDC_ADDRESS = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
 
 # Map chain ID to more info
 networks = {
