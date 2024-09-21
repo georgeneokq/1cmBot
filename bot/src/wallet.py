@@ -18,7 +18,6 @@ def initialise_w3(rpc):
 
 def execute_transaction(rpc, transaction, private_key):
     w3 = initialise_w3(rpc)
-    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
     account = w3.eth.account.from_key(private_key)
 
     # Estimate Gas
