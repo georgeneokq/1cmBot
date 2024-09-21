@@ -125,8 +125,7 @@ async def show_main_menu(user: dict, context):
     if chain_id:
         oneinch = OneInchAPI()
         # Mapping of address to value
-        # balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
-        balances = {}
+        balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
 
         text += "\nBalance:\n"
         # Mapping of address to a dict containing balance and token name

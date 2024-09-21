@@ -1,5 +1,6 @@
 import requests
 from os import getenv
+from time import sleep
 from web3 import Web3
 
 class NoAPIKeyError(Exception):
@@ -8,7 +9,12 @@ class NoAPIKeyError(Exception):
 
 
 class OneInchAPI:
-    def __init__(self):
+    def __init__(self, post_delay=1):
+        """
+        Debounce parameter is a delay in seconds to wait before executing the rest of the code.
+        This may be needed in development purposes using a free API key due to the RPS limit.
+        For now, each method will be in charge of implementing the debounce.
+        """
         self.api_base_url = "https://api.1inch.dev"
         api_key = getenv('ONEINCH_API_KEY')
         if not api_key:
@@ -16,6 +22,7 @@ class OneInchAPI:
         self.headers = {
                 "Authorization": f"Bearer {api_key}"
             }
+        self.post_delay = post_delay
 
     def _build_api_url(self, api_name, version_number, chain_id, method_name):
         return f"{self.api_base_url}/{api_name}/v{version_number}/{chain_id}/{method_name}"
@@ -28,6 +35,7 @@ class OneInchAPI:
             "amount": amount
         }
         response = requests.get(url, headers=self.headers, params=params)
+        sleep(self.post_delay)
         try:
             return float(response.json().get("dstAmount"))
         except Exception as e:
@@ -43,6 +51,7 @@ class OneInchAPI:
             "amount": amount
         }
         response = requests.get(url, headers=self.headers, params=params)
+        sleep(self.post_delay)
         try:
             # Clean up tx response to be sent onchain
             calldata = response.json()
@@ -69,6 +78,7 @@ class OneInchAPI:
             "disableEstimate": "false"
         }
         response = requests.get(url, headers=self.headers, params=params)
+        sleep(self.post_delay)
         try:
             # Clean up tx response to be sent onchain
             calldata = response.json()
@@ -87,6 +97,7 @@ class OneInchAPI:
         assert period in ["24H", "1W", "1Y", "AllTime"], 'Please select period from ["24H", "1W", "1Y", "AllTime"]'
         url = f"{self.api_base_url}/charts/v1.0/chart/line/{token0}/{token1}/{period}/{chain_id}"
         response = requests.get(url, headers=self.headers)
+        sleep(self.post_delay)
         try:
             return response.json()
         except Exception as e:
@@ -101,6 +112,7 @@ class OneInchAPI:
             "only_positive_rating": include_unrated
         }
         response = requests.get(url, headers=self.headers, params=params)
+        sleep(self.post_delay)
         try:
            return response.json()
         except Exception as e:
@@ -112,6 +124,7 @@ class OneInchAPI:
         url = self._build_api_url("balance", 1.2, chain_id, "balances")
         url += f"/{wallet_address}"
         response = requests.get(url, headers=self.headers)
+        sleep(self.post_delay)
         try:
             return response.json()
         except Exception as e:
@@ -123,6 +136,7 @@ class OneInchAPI:
         url = self._build_api_url("token", 1.2, chain_id, f"custom")
         url += f"/{token_address}"
         response = requests.get(url, headers=self.headers)
+        sleep(self.post_delay)
         try:
             return response.json()
         except Exception as e:
