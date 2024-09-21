@@ -20,6 +20,7 @@ from cache.user import (
     unset_user_current_stage,
 )
 from oneinch_api import OneInchAPI
+from charts import generate_chart
 from constants import networks
 
 Account.enable_unaudited_hdwallet_features()
@@ -70,11 +71,24 @@ def main_menu_keyboard(user: dict):
     return InlineKeyboardMarkup(buttons)
 
 
-async def show_main_menu(update: Update, user):
-    await update.message.reply_text(
-        "What would you like to do today?", reply_markup=main_menu_keyboard(user)
-    )
+async def show_main_menu(user: dict, context):
+    """ Default prompt which shows token0/token1 graph, wallet address and balance """
+    user_id = user['id']
+    chain_id = user.get("chain_id")
 
+    wallet = get_wallet_details(user["derivation_path"])
+    wallet_address = wallet["address"]
+
+    text = ""
+    text += f"Wallet Address: `{wallet_address}` (tap to copy)\n"
+
+    # If chain has been set, we can retrieve token balance for the user
+    if chain_id:
+        oneinch = OneInchAPI()
+        balances = oneinch.get_token_balance(chain_id, wallet_address)
+        print(balances)
+
+    await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard(user))
 
 ### Command Handlers ###
 
@@ -131,7 +145,7 @@ async def set_chain(update: Update, user_id: int, text: str):
     user = get_user(user_id)
     assert user is not None
     await update.message.reply_text(
-        f"Your chain has been updated to {chain_name}!\nYour token addresses have been reset.\n\nWhat else would you like to do today?",
+        f"Your chain has been updated to {chain_name}!\nYour token addresses have been reset.\n\nWhat else would you like to do?",
         reply_markup=main_menu_keyboard(user),
     )
 
@@ -167,7 +181,7 @@ async def set_slippage(update: Update, user_id: int, text: str):
     user = get_user(user_id)
     assert user is not None
     await update.message.reply_text(
-        f"Your slippage has been updated to {slippage}%!\n\nWhat else would you like to do today?",
+        f"Your slippage has been updated to {slippage}%!\n\nWhat else would you like to do?",
         reply_markup=main_menu_keyboard(user),
     )
 
@@ -176,7 +190,6 @@ async def set_slippage(update: Update, user_id: int, text: str):
 
 async def handle_set_token0(query):
     """Handle set token 0 command"""
-    # TODO: Hide the button by default if chain not set
     user_id = query.from_user.id
     await query.edit_message_text(f"Paste token address:")
     set_user_current_stage(user_id, Command.SET_TOKEN0, 1)
@@ -215,9 +228,11 @@ async def set_token0(update: Update, user_id: int, text: str):
     cursor.close()
     conn.close()
 
+    user = get_user(user_id)
+    assert user is not None
     await update.message.reply_text(
-        f"Updated.\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard(get_user(user_id)),
+        f"Updated.\n\nWhat else would you like to do?",
+        reply_markup=main_menu_keyboard(user),
     )
 
     unset_user_current_stage(user_id)
@@ -226,9 +241,7 @@ async def set_token0(update: Update, user_id: int, text: str):
 async def handle_set_token1(query):
     """Handle set sell token command"""
     # TODO: Hide the button by default if chain not set
-    user = query.from_user
-    user_id = user.id
-    assert user is not None
+    user_id = query.from_user.id
     await query.edit_message_text(f"Paste token address:")
     set_user_current_stage(user_id, Command.SET_TOKEN1, 1)
 
@@ -267,13 +280,52 @@ async def set_token1(update: Update, user_id: int, text: str):
     cursor.close()
     conn.close()
 
+    user = get_user(user_id)
+    assert user is not None
     await update.message.reply_text(
-        f"Updated.\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard(get_user(user_id)),
+        f"Updated.\n\nWhat else would you like to do?",
+        reply_markup=main_menu_keyboard(user),
     )
 
     unset_user_current_stage(user_id)
 
+
+async def handle_show_token0_chart(query, context):
+    user_id = query.from_user.id
+    user = get_user(user_id)
+    assert user is not None
+
+    # Get token addresses
+    chain_id = user["chain_id"]
+    token0_address = user["token0_address"]
+    token0_name = user["token0_name"]
+    token1_address = user["token1_address"]
+    token1_name = user["token1_name"]
+
+    chart = generate_chart(chain_id, token0_address, token0_name, token1_address, token1_name)
+
+    await context.bot.send_message(chat_id=user_id, text="Generating chart...")
+
+    await context.bot.send_photo(chat_id=user_id, photo=chart)
+
+    await context.bot.send_message(chat_id=user_id, text="Here you go!")
+
+
+async def handle_show_token1_chart(query, context):
+    user_id = query.from_user.id
+    user = get_user(user_id)
+    assert user is not None
+
+    # Get token addresses
+    chain_id = user["chain_id"]
+    token0_address = user["token0_address"]
+    token1_address = user["token1_address"]
+
+    chart = generate_chart(chain_id, token1_address, token0_address)
+
+    await context.bot.send_photo(chat_id=user_id, photo=chart)
+
+    await context.bot.send_message(chat_id=user_id, text="Here you go!")
 
 ### Command Handlers END ###
 
@@ -284,6 +336,8 @@ handlers: dict[str, Callable] = {
     Command.SET_SLIPPAGE.value: handle_set_slippage,
     Command.SET_TOKEN0.value: handle_set_token0,
     Command.SET_TOKEN1.value: handle_set_token1,
+    Command.SHOW_TOKEN0_CHART.value: handle_show_token0_chart,
+    Command.SHOW_TOKEN1_CHART.value: handle_show_token1_chart,
 }
 
 
@@ -296,11 +350,12 @@ async def start(update: Update, context) -> None:
         add_user(user_id)
 
     user = get_user(user_id)
+    assert user is not None
 
     # Reset current prompt if it exists, as the user may use this command to cancel
     unset_user_current_stage(user_id)
 
-    await show_main_menu(update, user)
+    await show_main_menu(user, context=context)
 
 
 # Callback handlers for each button
@@ -312,7 +367,7 @@ async def button_callback(update: Update, context) -> None:
     callback = handlers.get(command)
 
     if callback:
-        await callback(query)
+        await callback(query, context=context)
 
 
 async def message_handler(update: Update, context) -> None:
@@ -329,7 +384,7 @@ async def message_handler(update: Update, context) -> None:
 
     # Nothing to handle
     if not current_prompt:
-        await show_main_menu(update, user)
+        await show_main_menu(user, context=context)
         return
 
     text = update.message.text
