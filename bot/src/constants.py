@@ -7,11 +7,13 @@ USDC_ADDRESS = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
 networks = {
     137: {
         "name": "Polygon",
-        "rpc": f"https://polygon-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}"
+        "rpc": f"https://polygon-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
+        "usdc_address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
     },
     8453: {
         "name": "Base",
-        "rpc": f"https://base-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}"
+        "rpc": f"https://base-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
+        "usdc_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
     }
 }
 

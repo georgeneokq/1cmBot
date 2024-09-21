@@ -21,19 +21,22 @@ from cache.user import (
 )
 from oneinch_api import OneInchAPI
 from charts import generate_chart
-from constants import networks, USDC_ADDRESS
+from constants import networks
 from util import parse_decimal, format_decimal
 
 Account.enable_unaudited_hdwallet_features()
+
 
 class WithdrawInfo(TypedDict):
     withdraw_wallet_address: str
     withdraw_token_address: str
     withdraw_amount: float
 
+
 # Stores withdrawal data input by the user
 # Map user id to withdrawal info
 withdrawal: dict[int, WithdrawInfo] = {}
+
 
 # Define the main menu keyboard layout
 def main_menu_keyboard(user: dict):
@@ -50,18 +53,22 @@ def main_menu_keyboard(user: dict):
 
     # Populate current configuration into button text
     if chain_name:
-        buttons.append([InlineKeyboardButton("Withdraw", callback_data=Command.WITHDRAW.value)])
+        buttons.append(
+            [InlineKeyboardButton("Withdraw", callback_data=Command.WITHDRAW.value)]
+        )
 
     slippage = user["slippage"]
-    buttons.append([
-        InlineKeyboardButton(
-            "Set Chain" if not chain_id else f"Network: {chain_name}",
-            callback_data=Command.SET_CHAIN.value,
-        ),
-        InlineKeyboardButton(
-            f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value
-        )
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "Set Chain" if not chain_id else f"Network: {chain_name}",
+                callback_data=Command.SET_CHAIN.value,
+            ),
+            InlineKeyboardButton(
+                f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value
+            ),
+        ]
+    )
 
     # Only if a chain has been chosen, the user can set the token addresses
     token0_name = user.get("token0_name")
@@ -137,23 +144,29 @@ async def show_main_menu(user: dict, context):
                 nonzero_balances[token_address] = {
                     "amount": parse_decimal(int(token_value_str), decimals),
                     "name": token_name,
-                    "decimals": decimals
+                    "decimals": decimals,
                 }
 
         # Append text and calculate USD equivalent
         usd_equiv = 0
         token0_address = user["token0_address"]
         token1_address = user["token1_address"]
+        network_info = networks[chain_id]
+        usdc_address = network_info["usdc_address"]
+
         for token_address, info in nonzero_balances.items():
             amount: float = info["amount"]
             name: str = info["name"]
             decimals = info["decimals"]
-            if token_address.lower() == USDC_ADDRESS:
+            if token_address.lower() == usdc_address:
                 usd_equiv += amount
             else:
                 # Get a quote from oneinch
                 dst_amount = oneinch.quoted_swap(
-                    chain_id, token_address, USDC_ADDRESS, format_decimal(amount, decimals)
+                    chain_id,
+                    token_address,
+                    usdc_address,
+                    format_decimal(amount, decimals),
                 )
                 # 6 decimals as stablecoins only up to 6 decimals
                 human_form = parse_decimal(dst_amount, 6)
@@ -215,22 +228,25 @@ async def handle_withdraw(query, context):
 
     # For each token that the user holds, create a new button to select it
     balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
-    for (token_address, amount_str) in balances.items():
-        if amount_str != '0':
+    for token_address, amount_str in balances.items():
+        if amount_str != "0":
             token_info = oneinch.get_token_info(chain_id, token_address)
             token_name = token_info.get("symbol", token_address)
-            buttons.append([InlineKeyboardButton(token_name, callback_data=token_address)])
-    
+            buttons.append(
+                [InlineKeyboardButton(token_name, callback_data=token_address)]
+            )
+
     # Ask user to select token
     set_user_current_stage(user_id, Command.WITHDRAW, 1)
     markup = InlineKeyboardMarkup(buttons)
     text = "Select token to withdraw"
     await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
 
+
 async def handle_withdraw_selected_token(data: str, user: dict, context):
     token_address = data
     user_id = user["id"]
-    withdrawal[user_id] = { "withdraw_token_address": token_address }
+    withdrawal[user_id] = {"withdraw_token_address": token_address}
 
     # Prompt user to enter withdrawal address
     text = "Enter wallet address to withdraw to:"
@@ -239,13 +255,14 @@ async def handle_withdraw_selected_token(data: str, user: dict, context):
     # Update next stage: Get withdrawal address
     set_user_current_stage(user_id, Command.WITHDRAW, 2)
 
+
 async def handle_withdraw_wallet_address(data: str, user: dict, context):
     wallet_address = data
     user_id = user["id"]
     current_withdraw_info = withdrawal[user_id]
     withdrawal[user_id] = {
         **current_withdraw_info,
-        "withdraw_wallet_address": wallet_address
+        "withdraw_wallet_address": wallet_address,
     }
 
     # Prompt user to input withdrawal amount
@@ -255,21 +272,19 @@ async def handle_withdraw_wallet_address(data: str, user: dict, context):
     # Update next stage: Get withdrawal amount
     set_user_current_stage(user_id, Command.WITHDRAW, 3)
 
+
 async def handle_withdraw_amount(data: str, user: dict, context):
     amount_str = data
     amount = float(amount_str)
     user_id = user["id"]
 
     current_withdraw_info = withdrawal[user_id]
-    withdrawal[user_id] = {
-        **current_withdraw_info,
-        "withdraw_amount": amount
-    }
+    withdrawal[user_id] = {**current_withdraw_info, "withdraw_amount": amount}
     current_withdraw_info = withdrawal[user_id]
     amount = current_withdraw_info["withdraw_amount"]
     withdraw_wallet_address = current_withdraw_info["withdraw_wallet_address"]
     token_address = current_withdraw_info["withdraw_token_address"]
-    
+
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(user["chain_id"], token_address)
     token_name = token_info["symbol"]
@@ -280,8 +295,13 @@ async def handle_withdraw_amount(data: str, user: dict, context):
     rpc = networks.get(chain_id).get("rpc")
     derivation_path = user["derivation_path"]
     wallet_details = get_wallet_details(derivation_path)
-    print(wallet_details)
-    success = withdraw_tokens(rpc, chain_id, token_address, withdraw_wallet_address, wallet_details["private_key"])
+    success = withdraw_tokens(
+        rpc,
+        chain_id,
+        token_address,
+        withdraw_wallet_address,
+        wallet_details["private_key"],
+    )
 
     if not success:
         text = "Failed to withdraw funds"
@@ -302,9 +322,10 @@ async def handle_set_chain(query, context):
     Set Chain command: Get Chain ID
     """
     # Get chain ID from user input
-    await query.edit_message_text("Enter chain ID:")
     user = query.from_user
     user_id = user.id
+    text = "Enter chain ID:"
+    await context.bot.send_message(chat_id=user_id, text=text)
     set_user_current_stage(user_id, Command.SET_CHAIN, 1)
 
 
@@ -326,12 +347,11 @@ async def set_chain(update: Update, user_id: int, text: str, context):
 
     user = get_user(user_id)
     assert user is not None
-    await update.message.reply_text(
-        f"Your chain has been updated to {chain_name}!\nYour token addresses have been reset.\n\nWhat else would you like to do?",
-        reply_markup=main_menu_keyboard(user),
-    )
+    text = f"Your chain has been updated to {chain_name}!\nYour token addresses have been reset.\n\nWhat else would you like to do?"
+    await context.bot.send_message(chat_id=user_id, text=text)
 
     unset_user_current_stage(user_id)
+    await show_main_menu(user, context)
 
 
 #### Set slippage ####
@@ -345,9 +365,8 @@ async def handle_set_slippage(query, context):
     user = get_user(user_id)
     assert user is not None
     current_slippage = user.get("slippage")
-    await query.edit_message_text(
-        f"Your current slippage is {current_slippage}%. Enter your new value(%):"
-    )
+    text = f"Your current slippage is {current_slippage}%. Enter your new value(%):"
+    await context.bot.send_message(chat_id=user_id, text=text)
     set_user_current_stage(user_id, Command.SET_SLIPPAGE, 1)
 
 
@@ -362,18 +381,17 @@ async def set_slippage(update: Update, user_id: int, text: str, context):
 
     user = get_user(user_id)
     assert user is not None
-    await update.message.reply_text(
-        f"Your slippage has been updated to {slippage}%!\n\nWhat else would you like to do?",
-        reply_markup=main_menu_keyboard(user),
-    )
+    text = f"Your slippage has been updated to {slippage}%!"
+    await context.bot.send_message(chat_id=user_id, text=text)
 
     unset_user_current_stage(user_id)
+    await show_main_menu(user, context)
 
 
 async def handle_set_token0(query, context):
     """Handle set token 0 command"""
     user_id = query.from_user.id
-    text = "Paste token0 address:"
+    text = "Paste token0 address (click here to /cancel):"
     await context.bot.send_message(chat_id=user_id, text=text)
     set_user_current_stage(user_id, Command.SET_TOKEN0, 1)
 
@@ -387,9 +405,8 @@ async def set_token0(update: Update, user_id: int, text: str, context):
     token_address = text
     token1_address: str | None = user.get("token1_address")
     if token1_address and token_address.lower() == token1_address.lower():
-        await update.message.reply_text(
-            f"Cannot be the same address as your sell token. Please enter another address."
-        )
+        text = f"Cannot be the same address as your sell token. Please enter another address."
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
 
     chain_id = user["chain_id"]
@@ -397,9 +414,8 @@ async def set_token0(update: Update, user_id: int, text: str, context):
     token_info = oneinch.get_token_info(chain_id, token_address)
     token_name = token_info.get("symbol")
     if not token_name:
-        await update.message.reply_text(
-            f"Invalid token address. Please enter another address."
-        )
+        text = f"Invalid token address. Please enter another address."
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
     conn = get_connection()
     cursor = conn.cursor()
@@ -413,9 +429,8 @@ async def set_token0(update: Update, user_id: int, text: str, context):
 
     user = get_user(user_id)
     assert user is not None
-    await update.message.reply_text(
-        f"Updated.",
-    )
+    text = "Updated!"
+    await context.bot.send_message(chat_id=user_id, text=text)
 
     await show_main_menu(user, context=context)
 
@@ -426,7 +441,7 @@ async def handle_set_token1(query, context):
     """Handle set sell token command"""
     # TODO: Hide the button by default if chain not set
     user_id = query.from_user.id
-    text = "Paste token1 address:"
+    text = "Paste token1 address (click here to /cancel):"
     await context.bot.send_message(chat_id=user_id, text=text)
     set_user_current_stage(user_id, Command.SET_TOKEN1, 1)
 
@@ -440,9 +455,10 @@ async def set_token1(update: Update, user_id: int, text: str, context):
     token_address = text
     token0_address: str | None = user.get("token0_address")
     if token0_address and token_address.lower() == token0_address.lower():
-        await update.message.reply_text(
+        text = (
             f"Cannot be the same address as your token 0. Please enter another address."
         )
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
 
     chain_id = user["chain_id"]
@@ -450,9 +466,8 @@ async def set_token1(update: Update, user_id: int, text: str, context):
     token_info = oneinch.get_token_info(chain_id, token_address)
     token_name = token_info.get("symbol")
     if not token_name:
-        await update.message.reply_text(
-            f"Invalid token address. Please enter another address."
-        )
+        text = f"Invalid token address. Please enter another address."
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
 
     conn = get_connection()
@@ -467,9 +482,8 @@ async def set_token1(update: Update, user_id: int, text: str, context):
 
     user = get_user(user_id)
     assert user is not None
-    await update.message.reply_text(
-        f"Updated.",
-    )
+    text = "Updated!"
+    await context.bot.send_message(chat_id=user_id, text=text)
 
     await show_main_menu(user, context=context)
 
@@ -494,23 +508,30 @@ async def handle_buy(query, context):
     # Present 4 options - 25%, 50%, 75%, 100%
     buttons: list[list[InlineKeyboardButton]] = []
 
-    buttons.append([
-        InlineKeyboardButton("25%", callback_data="25"),
-        InlineKeyboardButton("50%", callback_data="50")
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton("25%", callback_data="25"),
+            InlineKeyboardButton("50%", callback_data="50"),
+        ]
+    )
 
-    buttons.append([
-        InlineKeyboardButton("75%", callback_data="75"),
-        InlineKeyboardButton("100%", callback_data="100")
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton("75%", callback_data="75"),
+            InlineKeyboardButton("100%", callback_data="100"),
+        ]
+    )
 
     markup = InlineKeyboardMarkup(buttons)
 
-    text = f"How much {token1_name} to convert to {token0_name}?"
+    text = (
+        f"How much {token1_name} to convert to {token0_name}? (click here to /cancel)"
+    )
     await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
 
     # Set to stage 1: Get amount
     set_user_current_stage(user_id, Command.BUY, 1)
+
 
 async def handle_buy_amount(data: str, user: dict, context):
     user_id = user["id"]
@@ -553,12 +574,21 @@ async def handle_buy_amount(data: str, user: dict, context):
         # Proceed with the transaction
         rpc = networks[chain_id]["rpc"]
         private_key = wallet_details["private_key"].hex()
-        
+
         amount_to_convert_str = format_decimal(amount_to_convert, token1_decimals)
-        transaction = oneinch.approve_swap_calldata(chain_id, token1_address, amount_to_convert_str)
+        transaction = oneinch.approve_swap_calldata(
+            chain_id, token1_address, amount_to_convert_str
+        )
         success = execute_transaction(rpc, transaction, private_key)
         if success:
-            transaction = oneinch.perform_swap_calldata(chain_id, token1_address, token0_address, amount_to_convert_str, wallet_address, slippage)
+            transaction = oneinch.perform_swap_calldata(
+                chain_id,
+                token1_address,
+                token0_address,
+                amount_to_convert_str,
+                wallet_address,
+                slippage,
+            )
             success = execute_transaction(rpc, transaction["tx"], private_key)
             if success:
                 text = "Success!"
@@ -584,23 +614,30 @@ async def handle_sell(query, context):
     # Present 4 options - 25%, 50%, 75%, 100%
     buttons: list[list[InlineKeyboardButton]] = []
 
-    buttons.append([
-        InlineKeyboardButton("25%", callback_data="25"),
-        InlineKeyboardButton("50%", callback_data="50")
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton("25%", callback_data="25"),
+            InlineKeyboardButton("50%", callback_data="50"),
+        ]
+    )
 
-    buttons.append([
-        InlineKeyboardButton("75%", callback_data="75"),
-        InlineKeyboardButton("100%", callback_data="100")
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton("75%", callback_data="75"),
+            InlineKeyboardButton("100%", callback_data="100"),
+        ]
+    )
 
     markup = InlineKeyboardMarkup(buttons)
 
-    text = f"How much {token0_name} to convert to {token1_name}?"
+    text = (
+        f"How much {token0_name} to convert to {token1_name}? (click here to /cancel)"
+    )
     await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
 
     # Set to stage 1: Get amount
     set_user_current_stage(user_id, Command.SELL, 1)
+
 
 async def handle_sell_amount(data: str, user: dict, context):
     user_id = user["id"]
@@ -643,12 +680,21 @@ async def handle_sell_amount(data: str, user: dict, context):
         # Proceed with the transaction
         rpc = networks[chain_id]["rpc"]
         private_key = wallet_details["private_key"].hex()
-        
+
         amount_to_convert_str = format_decimal(amount_to_convert, token0_decimals)
-        transaction = oneinch.approve_swap_calldata(chain_id, token0_address, amount_to_convert_str)
+        transaction = oneinch.approve_swap_calldata(
+            chain_id, token0_address, amount_to_convert_str
+        )
         success = execute_transaction(rpc, transaction, private_key)
         if success:
-            transaction = oneinch.perform_swap_calldata(chain_id, token0_address, token1_address, amount_to_convert_str, wallet_address, slippage)
+            transaction = oneinch.perform_swap_calldata(
+                chain_id,
+                token0_address,
+                token1_address,
+                amount_to_convert_str,
+                wallet_address,
+                slippage,
+            )
             success = execute_transaction(rpc, transaction["tx"], private_key)
             if success:
                 text = "Success!"
@@ -674,7 +720,7 @@ handlers: dict[str, Callable] = {
     Command.SET_TOKEN1.value: handle_set_token1,
     Command.REFRESH.value: handle_refresh,
     Command.BUY.value: handle_buy,
-    Command.SELL.value: handle_sell
+    Command.SELL.value: handle_sell,
 }
 
 
@@ -738,7 +784,8 @@ async def message_handler(update: Update, context) -> None:
     # Check that the user has initialized with /start
     user = get_user(user_id)
     if not user:
-        await update.message.reply_text("Hi there, let's get started by typing /start!")
+        text = "Hi there, let's get started by typing /start!"
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
 
     current_prompt = get_user_current_stage(user_id)
@@ -754,7 +801,9 @@ async def message_handler(update: Update, context) -> None:
         await handle_withdraw_wallet_address(text, user, context=context)
     elif current_prompt["command"] == Command.WITHDRAW and current_prompt["stage"] == 3:
         await handle_withdraw_amount(text, user, context=context)
-    elif current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1:
+    elif (
+        current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1
+    ):
         await set_chain(update, user_id, text, context=context)
     elif current_prompt["command"] == Command.SET_SLIPPAGE:
         await set_slippage(update, user_id, text, context=context)
@@ -771,6 +820,7 @@ def main() -> None:
 
     # Start command to display the main menu
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("cancel", start))
 
     # CallbackQueryHandler to handle button presses
     application.add_handler(CallbackQueryHandler(button_callback))
