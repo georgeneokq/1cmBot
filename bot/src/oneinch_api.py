@@ -12,7 +12,7 @@ class OneInchAPI:
         self.api_base_url = "https://api.1inch.dev"
         api_key = getenv('ONEINCH_API_KEY')
         if not api_key:
-            raise NoAPIKeyError("Set up your API key to initialise this class!")
+            raise NoAPIKeyError("Set up your ONEINCH_API_KEY to initialise this class!")
         self.headers = {
                 "Authorization": f"Bearer {api_key}"
             }
@@ -21,6 +21,8 @@ class OneInchAPI:
     def _build_api_url(self, api_name, version_number, chain_id, method_name):
         os.path
         return f"{self.api_base_url}/{api_name}/v{version_number}/{chain_id}/{method_name}"
+
+    # def quote_swap_calldata()
 
 
     def approve_swap_calldata(self, chain_id, token_address, amount):
