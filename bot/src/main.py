@@ -25,6 +25,7 @@ from constants import networks, USDC_ADDRESS
 
 Account.enable_unaudited_hdwallet_features()
 
+
 # Define the main menu keyboard layout
 def main_menu_keyboard(user: dict):
     """
@@ -40,42 +41,80 @@ def main_menu_keyboard(user: dict):
     chain_id = user.get("chain_id", -1)
     chain_info = networks.get(chain_id)
     chain_name = chain_info["name"] if chain_info else chain_id
-    buttons.append([InlineKeyboardButton("Set Chain" if not chain_id else f"Network: {chain_name}", callback_data=Command.SET_CHAIN.value)])
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "Set Chain" if not chain_id else f"Network: {chain_name}",
+                callback_data=Command.SET_CHAIN.value,
+            )
+        ]
+    )
 
     slippage = user["slippage"]
-    buttons.append([InlineKeyboardButton(f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value)])
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value
+            )
+        ]
+    )
 
-    # Only if a chain has been chosen, the user can set the token addresses    
+    # Only if a chain has been chosen, the user can set the token addresses
     token0_name = user.get("token0_name")
     token1_name = user.get("token1_name")
     if chain_id:
-        buttons.append([
-            InlineKeyboardButton("Token0" if not token0_name else f"Token0: {token0_name}", callback_data=Command.SET_TOKEN0.value),
-            InlineKeyboardButton("Token1" if not token1_name else f"Token1: {token1_name}", callback_data=Command.SET_TOKEN1.value)
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "Token0" if not token0_name else f"Token0: {token0_name}",
+                    callback_data=Command.SET_TOKEN0.value,
+                ),
+                InlineKeyboardButton(
+                    "Token1" if not token1_name else f"Token1: {token1_name}",
+                    callback_data=Command.SET_TOKEN1.value,
+                ),
+            ]
+        )
 
     # Assume token name to be set along with address (if there is a name, there will be an address.)
     if token0_name and token1_name:
         # Chart buttons
-        buttons.append([
-            InlineKeyboardButton(f"{token0_name}/{token1_name} 📈", callback_data=Command.SHOW_TOKEN0_CHART.value),
-            InlineKeyboardButton(f"{token1_name}/{token0_name} 📈", callback_data=Command.SHOW_TOKEN1_CHART.value)
-        ])
-    
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"Current Price 📈",
+                    callback_data=Command.SHOW_CHART.value,
+                ),
+            ]
+        )
+
         # Buy/Sell buttons
-        buttons.append([
-            InlineKeyboardButton(f"Buy {token0_name}", callback_data=Command.SET_TOKEN0.value),
-            InlineKeyboardButton(f"Sell {token0_name}", callback_data=Command.SET_TOKEN1.value)
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"Buy {token0_name}", callback_data=Command.SET_TOKEN0.value
+                ),
+                InlineKeyboardButton(
+                    f"Sell {token0_name}", callback_data=Command.SET_TOKEN1.value
+                ),
+            ]
+        )
+
+    buttons.append(
+        [InlineKeyboardButton("Refresh", callback_data=Command.REFRESH.value)]
+    )
 
     return InlineKeyboardMarkup(buttons)
 
 
 async def show_main_menu(user: dict, context):
-    """ Default prompt which shows token0/token1 graph, wallet address and balance """
-    user_id = user['id']
-    chain_id = user.get("chain_id")
+    """Default prompt which shows token0/token1 graph, wallet address and balance"""
+    user_id = user["id"]
 
+    # Loading message because stuff takes pretty long to load here.
+    await context.bot.send_message(chat_id=user_id, text="Loading, please wait...")
+
+    chain_id = user.get("chain_id")
     wallet = get_wallet_details(user["derivation_path"])
     wallet_address = wallet["address"]
 
@@ -86,40 +125,69 @@ async def show_main_menu(user: dict, context):
     if chain_id:
         oneinch = OneInchAPI()
         # Mapping of address to value
-        balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
+        # balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
+        balances = {}
 
         text += "\nBalance:\n"
         # Mapping of address to a dict containing balance and token name
         nonzero_balances: dict[str, dict] = {}
         for token_address, token_value_str in balances.items():
             # For non-zero balances, look up more info on the token
-            if token_value_str != '0':
+            if token_value_str != "0":
                 # Look up info using API
                 # TODO: Actually test this
                 token_info = oneinch.get_token_info(chain_id, token_address)
                 token_name = token_info.get("symbol", token_address)
                 text += f"{token_name}: {token_value_str}"
-                nonzero_balances[token_address] = { "amount": float(token_value_str), "name": token_name }
-        
+                nonzero_balances[token_address] = {
+                    "amount": float(token_value_str),
+                    "name": token_name,
+                }
+
         # Append text and calculate USD equivalent
         usd_equiv = 0
-        for (token_address, info) in nonzero_balances.items():
+        for token_address, info in nonzero_balances.items():
             amount: float = info["amount"]
             name: str = info["name"]
             if token_address == USDC_ADDRESS:
                 usd_equiv += amount
             else:
                 # Get a quote from oneinch
-                dst_amount = oneinch.quoted_swap(chain_id, token_address, USDC_ADDRESS, amount)
+                dst_amount = oneinch.quoted_swap(
+                    chain_id, token_address, USDC_ADDRESS, amount
+                )
                 usd_equiv += dst_amount
-            
+
             # Append text for current iterating token
             text += f"{name}: {amount}"
-        
+
         # Show USD equivalent of all coins
         text += f"Total Balance (USD): {usd_equiv}"
 
-    await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard(user))
+    chart = None
+    token0_address = user.get("token0_address")
+    token1_address = user.get("token1_address")
+    if chain_id and token0_address and token1_address:
+        token0_name = user["token0_name"]
+        token1_name = user["token1_name"]
+        chart = generate_chart(
+            chain_id, token0_address, token0_name, token1_address, token1_name
+        )
+        await context.bot.send_photo(
+            photo=chart,
+            chat_id=user_id,
+            caption=text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu_keyboard(user),
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu_keyboard(user),
+        )
+
 
 ### Command Handlers ###
 
@@ -142,7 +210,9 @@ async def handle_wallet(query):
     try:
         # Will raise an exception if the edit content is the same as current content. Ignore it
         await query.edit_message_text(
-            text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard(user)
+            text=text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu_keyboard(user),
         )
     except Exception:
         pass
@@ -164,7 +234,10 @@ async def set_chain(update: Update, user_id: int, text: str):
     chain_id = text
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET chain_id=%s, token0_address=NULL, token1_address=NULL, token0_name=NULL, token1_name=NULL WHERE id=%s", (chain_id, user_id))
+    cursor.execute(
+        "UPDATE users SET chain_id=%s, token0_address=NULL, token1_address=NULL, token0_name=NULL, token1_name=NULL WHERE id=%s",
+        (chain_id, user_id),
+    )
     conn.commit()
     cursor.close()
     conn.close()
@@ -333,7 +406,9 @@ async def handle_show_token0_chart(query, context):
     token1_address = user["token1_address"]
     token1_name = user["token1_name"]
 
-    chart = generate_chart(chain_id, token0_address, token0_name, token1_address, token1_name)
+    chart = generate_chart(
+        chain_id, token0_address, token0_name, token1_address, token1_name
+    )
 
     await context.bot.send_message(chat_id=user_id, text="Generating chart...")
 
@@ -342,21 +417,12 @@ async def handle_show_token0_chart(query, context):
     await context.bot.send_message(chat_id=user_id, text="Here you go!")
 
 
-async def handle_show_token1_chart(query, context):
+async def handle_refresh(query, context):
     user_id = query.from_user.id
     user = get_user(user_id)
     assert user is not None
+    await show_main_menu(user, context)
 
-    # Get token addresses
-    chain_id = user["chain_id"]
-    token0_address = user["token0_address"]
-    token1_address = user["token1_address"]
-
-    chart = generate_chart(chain_id, token1_address, token0_address)
-
-    await context.bot.send_photo(chat_id=user_id, photo=chart)
-
-    await context.bot.send_message(chat_id=user_id, text="Here you go!")
 
 ### Command Handlers END ###
 
@@ -367,8 +433,8 @@ handlers: dict[str, Callable] = {
     Command.SET_SLIPPAGE.value: handle_set_slippage,
     Command.SET_TOKEN0.value: handle_set_token0,
     Command.SET_TOKEN1.value: handle_set_token1,
-    Command.SHOW_TOKEN0_CHART.value: handle_show_token0_chart,
-    Command.SHOW_TOKEN1_CHART.value: handle_show_token1_chart,
+    Command.SHOW_CHART.value: handle_show_token0_chart,
+    Command.REFRESH.value: handle_refresh,
 }
 
 
