@@ -16,10 +16,24 @@ class OneInchAPI:
         self.headers = {
                 "Authorization": f"Bearer {api_key}"
             }
-        
 
     def _build_api_url(self, api_name, version_number, chain_id, method_name):
         return f"{self.api_base_url}/{api_name}/v{version_number}/{chain_id}/{method_name}"
+
+    def quoted_swap(self, chain_id, src_token_address, dst_token_address, amount):
+        url = self._build_api_url("swap", 6.0, chain_id, "quote")
+        params = {
+            "src": src_token_address,
+            "dst": dst_token_address,
+            "amount": amount
+        }
+        response = requests.get(url, headers=self.headers, params=params)
+        try:
+            return response.json()
+        except Exception as e:
+            print(e)
+            print(response)
+            print(response.text)
 
     def approve_swap_calldata(self, chain_id, token_address, amount):
         url = self._build_api_url("swap", 6.0, chain_id, "approve/transaction")
@@ -27,7 +41,6 @@ class OneInchAPI:
             "tokenAddress": token_address,
             "amount": amount
         }
-
         response = requests.get(url, headers=self.headers, params=params)
         try:
             # Clean up tx response to be sent onchain
@@ -73,7 +86,12 @@ class OneInchAPI:
         assert period in ["24H", "1W", "1Y", "AllTime"], 'Please select period from ["24H", "1W", "1Y", "AllTime"]'
         url = f"{self.api_base_url}/charts/v1.0/chart/line/{token0}/{token1}/{period}/{chain_id}"
         response = requests.get(url, headers=self.headers)
-        return response.json()
+        try:
+            return response.json()
+        except Exception as e:
+            print(e)
+            print(response)
+            print(response.text)
 
     def search_tokens(self, chain_id, token_query, include_unrated="true"):
         url = self._build_api_url("token", 1.2, chain_id, "search")
@@ -82,14 +100,23 @@ class OneInchAPI:
             "only_positive_rating": include_unrated
         }
         response = requests.get(url, headers=self.headers, params=params)
-        return response.json()
+        try:
+           return response.json()
+        except Exception as e:
+            print(e)
+            print(response)
+            print(response.text)
 
     def get_token_balance(self, chain_id, wallet_address):
         url = self._build_api_url("balance", 1.2, chain_id, "balances")
         url += f"/{wallet_address}"
         response = requests.get(url, headers=self.headers)
-        return response.json()
-
+        try:
+            return response.json()
+        except Exception as e:
+            print(e)
+            print(response)
+            print(response.text)
 
 
 if __name__ == '__main__':
@@ -98,3 +125,4 @@ if __name__ == '__main__':
     # print(oneinch.search_tokens(137, "XSGD"))  # Working
     # print(oneinch.approve_swap_calldata(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", 1000))  # Working
     # print(oneinch.get_historical_chart_data(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xDC3326e71D45186F113a2F448984CA0e8D201995"))  # Working
+    # print(oneinch.quoted_swap(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xDC3326e71D45186F113a2F448984CA0e8D201995", 1000000000))  # Working
