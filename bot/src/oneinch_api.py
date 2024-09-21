@@ -1,4 +1,4 @@
-import os
+from os import getenv
 import requests
 
 
@@ -10,7 +10,7 @@ class NoAPIKeyError(Exception):
 class OneInchAPI:
     def __init__(self):
         self.api_base_url = "https://api.1inch.dev"
-        api_key = os.getenv('ONEINCH_API_KEY')
+        api_key = getenv('ONEINCH_API_KEY')
         if not api_key:
             raise NoAPIKeyError("Set up your API key to initialise this class!")
         self.headers = {
