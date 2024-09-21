@@ -564,6 +564,8 @@ async def handle_buy_amount(data: str, user: dict, context):
     token1_balance = parse_decimal(balance, token1_decimals)
     if token1_balance == 0:
         amount_to_convert = 0
+    elif token1_percentage == 100:
+        amount_to_convert = token1_balance
     else:
         amount_to_convert = token1_balance / 100 * token1_percentage
 
@@ -670,6 +672,8 @@ async def handle_sell_amount(data: str, user: dict, context):
     token0_balance = parse_decimal(balance, token0_decimals)
     if token0_balance == 0:
         amount_to_convert = 0
+    elif token0_percentage == 100:
+        amount_to_convert = token0_balance
     else:
         amount_to_convert = token0_balance / 100 * token0_percentage
 
