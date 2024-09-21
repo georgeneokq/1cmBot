@@ -120,10 +120,13 @@ class OneInchAPI:
             print(response)
             print(response.text)
 
-    def get_token_balance(self, chain_id, wallet_address):
+    def get_token_balance(self, chain_id, wallet_address, token_addresses=[]):
         url = self._build_api_url("balance", 1.2, chain_id, "balances")
         url += f"/{wallet_address}"
-        response = requests.get(url, headers=self.headers)
+        if token_addresses:
+            response = requests.post(url, json={"tokens": token_addresses}, headers=self.headers)
+        else:
+            response = requests.get(url, headers=self.headers)
         sleep(self.post_delay)
         try:
             return response.json()
@@ -149,7 +152,39 @@ class OneInchAPI:
 if __name__ == '__main__':
     oneinch = OneInchAPI()
     # print(oneinch.get_token_balance(137, "0xB73f259E3d061e21b8725950d8aEFc8449A64c35"))  # Working
+    print(oneinch.get_token_balance(137, "0xB73f259E3d061e21b8725950d8aEFc8449A64c35", ["0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"]))  # Working
     # print(oneinch.search_tokens(137, "XSGD"))  # Working
     # print(oneinch.approve_swap_calldata(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", 1000))  # Working
     # print(oneinch.get_historical_chart_data(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xDC3326e71D45186F113a2F448984CA0e8D201995"))  # Working
     # print(oneinch.quoted_swap(137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xDC3326e71D45186F113a2F448984CA0e8D201995", 1000000000))  # Working
+
+
+"""
+const axios = require("axios");
+
+async function httpCall() {
+
+  const url = "https://api.1inch.dev/balance/v1.2/137/balances/{walletAddress}";
+
+  const config = {
+      headers: undefined,
+      params: {},
+      paramsSerializer: {
+        indexes: null
+      }
+  };
+       const body = {
+  "tokens": [
+    "0xdac17f958d2ee523a2206206994597c13d831ec7"
+  ]
+};
+
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+"""
