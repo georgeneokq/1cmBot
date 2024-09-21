@@ -45,22 +45,25 @@ def main_menu_keyboard(user: dict):
     buttons.append([InlineKeyboardButton(f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value)])
 
     # Only if a chain has been chosen, the user can set the token addresses    
-    if chain_id:
-        buttons.append([InlineKeyboardButton("Set Buy Token", callback_data=Command.SET_BUY_TOKEN.value)])
-        buttons.append([InlineKeyboardButton("Set Sell Token", callback_data=Command.SET_SELL_TOKEN.value)])
-
-
-    # Assume token name to be set along with address (if there is a name, there will be an address.)
     buy_token_name = user.get("buy_token_name")
     sell_token_name = user.get("sell_token_name")
+    if chain_id:
+        buttons.append([InlineKeyboardButton("Set Buy Token" if not buy_token_name else f"Buy Token: {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value)])
+        buttons.append([InlineKeyboardButton("Set Sell Token" if not sell_token_name else f"Sell Token: {sell_token_name}", callback_data=Command.SET_SELL_TOKEN.value)])
+
+    # Assume token name to be set along with address (if there is a name, there will be an address.)
     if buy_token_name and sell_token_name:
         # Chart buttons
-        buttons.append([InlineKeyboardButton(f"{buy_token_name}/{sell_token_name} chart", callback_data=Command.SHOW_BUY_CHART.value)])
-        buttons.append([InlineKeyboardButton(f"{sell_token_name}/{buy_token_name} chart", callback_data=Command.SHOW_SELL_CHART.value)])
+        buttons.append([
+            InlineKeyboardButton(f"{buy_token_name}/{sell_token_name} 📈", callback_data=Command.SHOW_BUY_CHART.value),
+            InlineKeyboardButton(f"{sell_token_name}/{buy_token_name} 📈", callback_data=Command.SHOW_SELL_CHART.value)
+        ])
     
         # Buy/Sell buttons
-        buttons.append([InlineKeyboardButton(f"Buy {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value)])
-        buttons.append([InlineKeyboardButton(f"Sell {buy_token_name}", callback_data=Command.SET_SELL_TOKEN.value)])
+        buttons.append([
+            InlineKeyboardButton(f"Buy {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value),
+            InlineKeyboardButton(f"Sell {buy_token_name}", callback_data=Command.SET_SELL_TOKEN.value)
+        ])
 
     return InlineKeyboardMarkup(buttons)
 
