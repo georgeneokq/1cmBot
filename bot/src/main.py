@@ -19,6 +19,7 @@ from cache.user import (
     set_user_current_stage,
     unset_user_current_stage,
 )
+from oneinch_api import OneInchAPI
 
 Account.enable_unaudited_hdwallet_features()
 
@@ -52,6 +53,7 @@ async def show_main_menu(update: Update):
 
 
 ### Command Handlers ###
+
 
 #### WALLET ####
 async def handle_wallet(query):
@@ -98,10 +100,9 @@ async def set_chain(update: Update, user_id: int, text: str):
     cursor.close()
     conn.close()
 
-    # TODO: Show actual chain name?
     await update.message.reply_text(
         f"Your chain has been updated to {chain}!\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard
+        reply_markup=main_menu_keyboard,
     )
 
     unset_user_current_stage(user_id)
@@ -134,7 +135,97 @@ async def set_slippage(update: Update, user_id: int, text: str):
     conn.close()
     await update.message.reply_text(
         f"Your slippage has been updated to {slippage}%!\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard
+        reply_markup=main_menu_keyboard,
+    )
+
+    unset_user_current_stage(user_id)
+
+
+async def handle_set_buy_token(query):
+    """Handle set buy token command"""
+    # TODO: Hide the button by default if chain not set
+    user_id = query.from_user.id
+    await query.edit_message_text(f"Paste the address of the token:")
+    set_user_current_stage(user_id, Command.SET_BUY_TOKEN, 1)
+
+
+async def set_buy_token(update: Update, user_id: int, text: str):
+    # Get user
+    user = get_user(user_id)
+    assert user is not None
+
+    # Disallow setting same as sell token
+    token_address = text
+    sell_token_address: str | None = user.get("sell_token_address")
+    if sell_token_address and token_address.lower() == sell_token_address.lower():
+        await update.message.reply_text(
+            f"Cannot be the same address as your sell token. Please enter another address."
+        )
+        return
+
+    chain_id = user["chain_id"]
+    oneinch = OneInchAPI()
+    token_info = oneinch.get_token_info(chain_id, token_address)
+    token_name = token_info.get("name", "")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET buy_token_address=%s, buy_token_name=%s WHERE id=%s",
+        (token_address.lower(), token_name, user_id),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    await update.message.reply_text(
+        f"Updated.\n\nWhat else would you like to do today?",
+        reply_markup=main_menu_keyboard,
+    )
+
+    unset_user_current_stage(user_id)
+
+
+async def handle_set_sell_token(query):
+    """Handle set sell token command"""
+    # TODO: Hide the button by default if chain not set
+    user = query.from_user
+    user_id = user.id
+    assert user is not None
+    await query.edit_message_text(f"Paste the address of the token:")
+    set_user_current_stage(user_id, Command.SET_SELL_TOKEN, 1)
+
+
+async def set_sell_token(update: Update, user_id: int, text: str):
+    # Get user
+    user = get_user(user_id)
+    assert user is not None
+
+    # Disallow setting same as buy token
+    token_address = text
+    buy_token_address: str | None = user.get("buy_token_address")
+    if buy_token_address and token_address.lower() == buy_token_address.lower():
+        await update.message.reply_text(
+            f"Cannot be the same address as your buy token. Please enter another address."
+        )
+        return
+
+    chain_id = user["chain_id"]
+    oneinch = OneInchAPI()
+    token_info = oneinch.get_token_info(chain_id, token_address)
+    token_name = token_info.get("name", "")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET sell_token_address=%s, sell_token_name=%s WHERE id=%s",
+        (token_address.lower(), token_name, user_id),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    await update.message.reply_text(
+        f"Updated.\n\nWhat else would you like to do today?",
+        reply_markup=main_menu_keyboard,
     )
 
     unset_user_current_stage(user_id)
@@ -147,6 +238,8 @@ handlers: dict[str, Callable] = {
     Command.WALLET.value: handle_wallet,
     Command.SET_CHAIN.value: handle_set_chain,
     Command.SET_SLIPPAGE.value: handle_set_slippage,
+    Command.SET_BUY_TOKEN.value: handle_set_buy_token,
+    Command.SET_SELL_TOKEN.value: handle_set_sell_token,
 }
 
 
@@ -192,6 +285,10 @@ async def message_handler(update: Update, context) -> None:
         await set_chain(update, user_id, text)
     elif current_prompt["command"] == Command.SET_SLIPPAGE:
         await set_slippage(update, user_id, text)
+    elif current_prompt["command"] == Command.SET_BUY_TOKEN:
+        await set_buy_token(update, user_id, text)
+    elif current_prompt["command"] == Command.SET_SELL_TOKEN:
+        await set_sell_token(update, user_id, text)
 
 
 def main() -> None:

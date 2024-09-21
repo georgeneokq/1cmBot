@@ -117,6 +117,18 @@ class OneInchAPI:
             print(e)
             print(response)
             print(response.text)
+    
+    def get_token_info(self, chain_id, token_address: str) -> dict:
+        url = self._build_api_url("token", 1.2, chain_id, f"custom")
+        url += f"/{token_address}"
+        response = requests.get(url, headers=self.headers)
+        try:
+            return response.json()
+        except Exception as e:
+            print(e)
+            print(response)
+            print(response.text)
+            return {}
 
 
 if __name__ == '__main__':
