@@ -20,7 +20,7 @@ class OneInchAPI:
     def _build_api_url(self, api_name, version_number, chain_id, method_name):
         return f"{self.api_base_url}/{api_name}/v{version_number}/{chain_id}/{method_name}"
 
-    def quoted_swap(self, chain_id, src_token_address, dst_token_address, amount):
+    def quoted_swap(self, chain_id, src_token_address, dst_token_address, amount) -> float:
         url = self._build_api_url("swap", 6.0, chain_id, "quote")
         params = {
             "src": src_token_address,
@@ -29,11 +29,12 @@ class OneInchAPI:
         }
         response = requests.get(url, headers=self.headers, params=params)
         try:
-            return response.json()
+            return float(response.json().get("dstAmount"))
         except Exception as e:
             print(e)
             print(response)
             print(response.text)
+            return 0.0
 
     def approve_swap_calldata(self, chain_id, token_address, amount):
         url = self._build_api_url("swap", 6.0, chain_id, "approve/transaction")

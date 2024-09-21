@@ -21,7 +21,7 @@ from cache.user import (
 )
 from oneinch_api import OneInchAPI
 from charts import generate_chart
-from constants import networks
+from constants import networks, USDC_ADDRESS
 
 Account.enable_unaudited_hdwallet_features()
 
@@ -85,8 +85,39 @@ async def show_main_menu(user: dict, context):
     # If chain has been set, we can retrieve token balance for the user
     if chain_id:
         oneinch = OneInchAPI()
-        balances = oneinch.get_token_balance(chain_id, wallet_address)
-        print(balances)
+        # Mapping of address to value
+        balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
+
+        text += "\nBalance:\n"
+        # Mapping of address to a dict containing balance and token name
+        nonzero_balances: dict[str, dict] = {}
+        for token_address, token_value_str in balances.items():
+            # For non-zero balances, look up more info on the token
+            if token_value_str != '0':
+                # Look up info using API
+                # TODO: Actually test this
+                token_info = oneinch.get_token_info(chain_id, token_address)
+                token_name = token_info.get("symbol", token_address)
+                text += f"{token_name}: {token_value_str}"
+                nonzero_balances[token_address] = { "amount": float(token_value_str), "name": token_name }
+        
+        # Append text and calculate USD equivalent
+        usd_equiv = 0
+        for (token_address, info) in nonzero_balances.items():
+            amount: float = info["amount"]
+            name: str = info["name"]
+            if token_address == USDC_ADDRESS:
+                usd_equiv += amount
+            else:
+                # Get a quote from oneinch
+                dst_amount = oneinch.quoted_swap(chain_id, token_address, USDC_ADDRESS, amount)
+                usd_equiv += dst_amount
+            
+            # Append text for current iterating token
+            text += f"{name}: {amount}"
+        
+        # Show USD equivalent of all coins
+        text += f"Total Balance (USD): {usd_equiv}"
 
     await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard(user))
 
