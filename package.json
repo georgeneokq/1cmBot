@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "docker compose down bot && docker compose up -d --build bot"
+    "start": "docker compose down bot && docker compose up -d --build bot",
+    "migrate": "prisma migrate dev --skip-generate"
   },
   "keywords": [],
   "author": "",

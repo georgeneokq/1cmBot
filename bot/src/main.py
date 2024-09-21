@@ -1,6 +1,7 @@
 from os import getenv
 from typing import Callable
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -8,11 +9,13 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from features.database import get_connection
+from eth_account import Account
 from features.database.user import get_user, add_user
+from features.wallet import get_wallet_details
 from features.commands.types import Command
 from cache.user import get_user_current_stage, set_user_current_stage, unset_user_current_stage
-from util import tuple_to_dict
+
+Account.enable_unaudited_hdwallet_features()
 
 # Map button text to command enum value
 # NOTE: Can't map to Command enum literal, must use its int representation as it must be JSON serializable
@@ -46,14 +49,18 @@ async def handle_wallet(query):
     Wallet command: Display wallet address and balances
     """
     # TODO: Get actual token balances and show USD equivalent
-    text = """
-Wallet Address: 0x0192383492592...
-USDC: 200.00
-XSGD: 100.00
-    """.strip()
+    # Get wallet details
+    user_id = query.from_user.id
+    user = get_user(user_id)
+    assert user is not None
+    wallet = get_wallet_details(user['derivation_path'])
+
+    # Craft the reply message. TODO: Fix the copy paste
+    text = f"Wallet Address: `{wallet.get('address')}`"
+
     try:
         # Will raise an exception if the edit content is the same as current content. Ignore it
-        await query.edit_message_text(text=text, reply_markup=main_menu_keyboard)
+        await query.edit_message_text(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard)
     except Exception:
         pass
 
@@ -88,6 +95,9 @@ async def start(update: Update, context) -> None:
     # Create user in database
     if not get_user(user_id):
         add_user(user_id)
+        print('user added')
+    else:
+        print('usern ot aded')
 
     # Reset current prompt if it exists, as the user may use this command to cancel
     unset_user_current_stage(user_id)
