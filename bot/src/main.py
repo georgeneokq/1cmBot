@@ -20,6 +20,7 @@ from cache.user import (
     unset_user_current_stage,
 )
 from oneinch_api import OneInchAPI
+from constants import networks
 
 Account.enable_unaudited_hdwallet_features()
 
@@ -34,14 +35,17 @@ def main_menu_keyboard(user: dict):
     # Populate current configuration into button text
     buttons.append([InlineKeyboardButton("Wallet", callback_data=Command.WALLET.value)])
 
-    chain = user.get("chain_id")
-    buttons.append([InlineKeyboardButton("Set Chain" if not chain else f"Network: {chain}", callback_data=Command.SET_CHAIN.value)])
+    # Get the chain name if we support it
+    chain_id = user.get("chain_id", -1)
+    chain_info = networks.get(chain_id)
+    chain_name = chain_info["name"] if chain_info else chain_id
+    buttons.append([InlineKeyboardButton("Set Chain" if not chain_id else f"Network: {chain_name}", callback_data=Command.SET_CHAIN.value)])
 
     slippage = user["slippage"]
     buttons.append([InlineKeyboardButton(f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value)])
 
     # Only if a chain has been chosen, the user can set the token addresses    
-    if chain:
+    if chain_id:
         buttons.append([InlineKeyboardButton("Set Buy Token", callback_data=Command.SET_BUY_TOKEN.value)])
         buttons.append([InlineKeyboardButton("Set Sell Token", callback_data=Command.SET_SELL_TOKEN.value)])
 
@@ -110,7 +114,7 @@ async def set_chain(update: Update, user_id: int, text: str):
     chain = text
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET chain_id=%s WHERE id=%s", (chain, user_id))
+    cursor.execute("UPDATE users SET chain_id=%s, buy_token_address=NULL, sell_token_address=NULL, buy_token_name=NULL, sell_token_name=NULL WHERE id=%s", (chain, user_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -118,7 +122,7 @@ async def set_chain(update: Update, user_id: int, text: str):
     user = get_user(user_id)
     assert user is not None
     await update.message.reply_text(
-        f"Your chain has been updated to {chain}!\n\nWhat else would you like to do today?",
+        f"Your chain has been updated to {chain}!\nYour token addresses have been reset.\n\nWhat else would you like to do today?",
         reply_markup=main_menu_keyboard(user),
     )
 
@@ -186,7 +190,7 @@ async def set_buy_token(update: Update, user_id: int, text: str):
     chain_id = user["chain_id"]
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(chain_id, token_address)
-    token_name = token_info.get("name")
+    token_name = token_info.get("symbol")
     if not token_name:
         await update.message.reply_text(
             f"Invalid token address. Please enter another address."
@@ -237,7 +241,7 @@ async def set_sell_token(update: Update, user_id: int, text: str):
     chain_id = user["chain_id"]
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(chain_id, token_address)
-    token_name = token_info.get("name", "")
+    token_name = token_info.get("symbol")
     if not token_name:
         await update.message.reply_text(
             f"Invalid token address. Please enter another address."

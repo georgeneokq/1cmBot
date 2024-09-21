@@ -18,7 +18,7 @@ model User {
   id  Int @id
   derivationPath Int @unique @default(autoincrement()) @map("derivation_path")
   slippage  Float @default(0.3)
-  chainId String? @map("chain_id")
+  chainId Int? @map("chain_id")
   buyTokenAddress String? @map("buy_token_address")
   sellTokenAddress String? @map("sell_token_address")
   buyTokenName  String? @map("buy_token_name")
