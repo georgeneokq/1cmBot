@@ -16,7 +16,8 @@ datasource db {
 // id will be telegram user id
 model User {
   id  Int @id
-  derivationPath String @map("derivation_path")
+  derivationPath Int @unique @default(autoincrement()) @map("derivation_path")
+  slippage  Float @default(0.3)
   chainId String? @map("chain_id")
 
   @@map("users")
