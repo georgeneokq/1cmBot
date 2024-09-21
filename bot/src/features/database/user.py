@@ -1,6 +1,5 @@
 from features.database import get_connection
 from util import tuple_to_dict
-from eth_account import Account
 
 def add_user(user_id: int):
     conn = get_connection()
@@ -17,7 +16,7 @@ def add_user(user_id: int):
 def get_user(user_id: int):
     conn = get_connection()
 
-    query = 'SELECT id, derivation_path, chain_id FROM users WHERE id=%s'
+    query = 'SELECT id, derivation_path, slippage, chain_id FROM users WHERE id=%s'
 
     cursor = conn.cursor()
     cursor.execute(query, (user_id,))
@@ -25,5 +24,5 @@ def get_user(user_id: int):
     user = cursor.fetchone()
     if not user:
         return None
-
-    return tuple_to_dict(user, ['id', 'derivation_path', 'chain_id'])
+    
+    return tuple_to_dict(user, ['id', 'derivation_path', 'slippage', 'chain_id'])

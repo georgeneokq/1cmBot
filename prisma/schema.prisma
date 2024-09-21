@@ -17,6 +17,7 @@ datasource db {
 model User {
   id  Int @id
   derivationPath Int @unique @default(autoincrement()) @map("derivation_path")
+  slippage  Float @default(0.3)
   chainId String? @map("chain_id")
 
   @@map("users")
