@@ -23,32 +23,47 @@ from oneinch_api import OneInchAPI
 
 Account.enable_unaudited_hdwallet_features()
 
-# Map button text to command enum value
-# NOTE: Can't map to Command enum literal, must use its int representation as it must be JSON serializable
-commands: dict[str, str] = {
-    "Wallet": Command.WALLET.value,
-    "Set Chain": Command.SET_CHAIN.value,
-    "Set Slippage": Command.SET_SLIPPAGE.value,
-    "Set Buy Token": Command.SET_BUY_TOKEN.value,
-    "Set Sell Token": Command.SET_SELL_TOKEN.value,
-    "Show Buy Chart": Command.SHOW_BUY_CHART.value,
-    "Show Sell Chart": Command.SHOW_SELL_CHART.value,
-    "Buy": Command.BUY.value,
-    "Sell": Command.SELL.value,
-}
-
 # Define the main menu keyboard layout
-main_menu_keyboard = InlineKeyboardMarkup(
-    [
-        [InlineKeyboardButton(display_text, callback_data=command)]
-        for (display_text, command) in commands.items()
-    ]
-)
+def main_menu_keyboard(user: dict):
+    """
+    Args:
+        user (dict): Result from get_user
+    """
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    # Populate current configuration into button text
+    buttons.append([InlineKeyboardButton("Wallet", callback_data=Command.WALLET.value)])
+
+    chain = user.get("chain_id")
+    buttons.append([InlineKeyboardButton("Set Chain" if not chain else f"Network: {chain}", callback_data=Command.SET_CHAIN.value)])
+
+    slippage = user["slippage"]
+    buttons.append([InlineKeyboardButton(f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value)])
+
+    # Only if a chain has been chosen, the user can set the token addresses    
+    if chain:
+        buttons.append([InlineKeyboardButton("Set Buy Token", callback_data=Command.SET_BUY_TOKEN.value)])
+        buttons.append([InlineKeyboardButton("Set Sell Token", callback_data=Command.SET_SELL_TOKEN.value)])
 
 
-async def show_main_menu(update: Update):
+    # Assume token name to be set along with address (if there is a name, there will be an address.)
+    buy_token_name = user.get("buy_token_name")
+    sell_token_name = user.get("sell_token_name")
+    if buy_token_name and sell_token_name:
+        # Chart buttons
+        buttons.append([InlineKeyboardButton(f"{buy_token_name}/{sell_token_name} chart", callback_data=Command.SHOW_BUY_CHART.value)])
+        buttons.append([InlineKeyboardButton(f"{sell_token_name}/{buy_token_name} chart", callback_data=Command.SHOW_SELL_CHART.value)])
+    
+        # Buy/Sell buttons
+        buttons.append([InlineKeyboardButton(f"Buy {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value)])
+        buttons.append([InlineKeyboardButton(f"Sell {buy_token_name}", callback_data=Command.SET_SELL_TOKEN.value)])
+
+    return InlineKeyboardMarkup(buttons)
+
+
+async def show_main_menu(update: Update, user):
     await update.message.reply_text(
-        "What would you like to do today?", reply_markup=main_menu_keyboard
+        "What would you like to do today?", reply_markup=main_menu_keyboard(user)
     )
 
 
@@ -73,7 +88,7 @@ async def handle_wallet(query):
     try:
         # Will raise an exception if the edit content is the same as current content. Ignore it
         await query.edit_message_text(
-            text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard
+            text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard(user)
         )
     except Exception:
         pass
@@ -100,9 +115,11 @@ async def set_chain(update: Update, user_id: int, text: str):
     cursor.close()
     conn.close()
 
+    user = get_user(user_id)
+    assert user is not None
     await update.message.reply_text(
         f"Your chain has been updated to {chain}!\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard,
+        reply_markup=main_menu_keyboard(user),
     )
 
     unset_user_current_stage(user_id)
@@ -133,9 +150,12 @@ async def set_slippage(update: Update, user_id: int, text: str):
     conn.commit()
     cursor.close()
     conn.close()
+
+    user = get_user(user_id)
+    assert user is not None
     await update.message.reply_text(
         f"Your slippage has been updated to {slippage}%!\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard,
+        reply_markup=main_menu_keyboard(user),
     )
 
     unset_user_current_stage(user_id)
@@ -145,7 +165,7 @@ async def handle_set_buy_token(query):
     """Handle set buy token command"""
     # TODO: Hide the button by default if chain not set
     user_id = query.from_user.id
-    await query.edit_message_text(f"Paste the address of the token:")
+    await query.edit_message_text(f"Paste the address of buy token:")
     set_user_current_stage(user_id, Command.SET_BUY_TOKEN, 1)
 
 
@@ -166,7 +186,12 @@ async def set_buy_token(update: Update, user_id: int, text: str):
     chain_id = user["chain_id"]
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(chain_id, token_address)
-    token_name = token_info.get("name", "")
+    token_name = token_info.get("name")
+    if not token_name:
+        await update.message.reply_text(
+            f"Invalid token address. Please enter another address."
+        )
+        return
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -179,7 +204,7 @@ async def set_buy_token(update: Update, user_id: int, text: str):
 
     await update.message.reply_text(
         f"Updated.\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard,
+        reply_markup=main_menu_keyboard(get_user(user_id)),
     )
 
     unset_user_current_stage(user_id)
@@ -191,7 +216,7 @@ async def handle_set_sell_token(query):
     user = query.from_user
     user_id = user.id
     assert user is not None
-    await query.edit_message_text(f"Paste the address of the token:")
+    await query.edit_message_text(f"Paste the address of sell token:")
     set_user_current_stage(user_id, Command.SET_SELL_TOKEN, 1)
 
 
@@ -213,6 +238,12 @@ async def set_sell_token(update: Update, user_id: int, text: str):
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(chain_id, token_address)
     token_name = token_info.get("name", "")
+    if not token_name:
+        await update.message.reply_text(
+            f"Invalid token address. Please enter another address."
+        )
+        return
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -225,7 +256,7 @@ async def set_sell_token(update: Update, user_id: int, text: str):
 
     await update.message.reply_text(
         f"Updated.\n\nWhat else would you like to do today?",
-        reply_markup=main_menu_keyboard,
+        reply_markup=main_menu_keyboard(get_user(user_id)),
     )
 
     unset_user_current_stage(user_id)
@@ -251,10 +282,12 @@ async def start(update: Update, context) -> None:
     if not get_user(user_id):
         add_user(user_id)
 
+    user = get_user(user_id)
+
     # Reset current prompt if it exists, as the user may use this command to cancel
     unset_user_current_stage(user_id)
 
-    await show_main_menu(update)
+    await show_main_menu(update, user)
 
 
 # Callback handlers for each button
@@ -272,11 +305,18 @@ async def button_callback(update: Update, context) -> None:
 async def message_handler(update: Update, context) -> None:
     user = update.effective_user
     user_id = user.id
+
+    # Check that the user has initialized with /start
+    user = get_user(user_id)
+    if not user:
+        await update.message.reply_text("Hi there, let's get started by typing /start!")
+        return
+
     current_prompt = get_user_current_stage(user_id)
 
     # Nothing to handle
     if not current_prompt:
-        await show_main_menu(update)
+        await show_main_menu(update, user)
         return
 
     text = update.message.text
