@@ -16,7 +16,7 @@ def add_user(user_id: int):
 def get_user(user_id: int):
     conn = get_connection()
 
-    query = 'SELECT id, derivation_path, slippage, chain_id FROM users WHERE id=%s'
+    query = 'SELECT id, derivation_path, slippage, chain_id, token0_address, token0_name, token1_address, token1_name FROM users WHERE id=%s'
 
     cursor = conn.cursor()
     cursor.execute(query, (user_id,))
@@ -25,4 +25,5 @@ def get_user(user_id: int):
     if not user:
         return None
     
-    return tuple_to_dict(user, ['id', 'derivation_path', 'slippage', 'chain_id'])
+    return tuple_to_dict(user, ['id', 'derivation_path', 'slippage', 'chain_id', 'token0_address', 'token0_name', 'token1_address', 'token1_name'])
+    

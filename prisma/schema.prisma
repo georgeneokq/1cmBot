@@ -18,7 +18,11 @@ model User {
   id  Int @id
   derivationPath Int @unique @default(autoincrement()) @map("derivation_path")
   slippage  Float @default(0.3)
-  chainId String? @map("chain_id")
+  chainId Int? @map("chain_id")
+  token0Address String? @map("token0_address")
+  token0Name  String? @map("token0_name")
+  token1Address String? @map("token1_address")
+  token1Name String? @map("token1_name")
 
   @@map("users")
 }
