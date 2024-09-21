@@ -4,7 +4,7 @@ from enum import Enum
 
 # Enum for command names
 class Command(Enum):
-    WALLET = "WALLET"
+    WITHDRAW = "WITHDRAW"
     SET_CHAIN = "SET_CHAIN"
     SET_SLIPPAGE = "SET_SLIPPAGE"
     SET_TOKEN0 = "SET_TOKEN0"
