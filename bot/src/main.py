@@ -45,24 +45,26 @@ def main_menu_keyboard(user: dict):
     buttons.append([InlineKeyboardButton(f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value)])
 
     # Only if a chain has been chosen, the user can set the token addresses    
-    buy_token_name = user.get("buy_token_name")
-    sell_token_name = user.get("sell_token_name")
+    token0_name = user.get("token0_name")
+    token1_name = user.get("token1_name")
     if chain_id:
-        buttons.append([InlineKeyboardButton("Set Buy Token" if not buy_token_name else f"Buy Token: {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value)])
-        buttons.append([InlineKeyboardButton("Set Sell Token" if not sell_token_name else f"Sell Token: {sell_token_name}", callback_data=Command.SET_SELL_TOKEN.value)])
+        buttons.append([
+            InlineKeyboardButton("Token0" if not token0_name else f"Token0: {token0_name}", callback_data=Command.SET_TOKEN0.value),
+            InlineKeyboardButton("Token1" if not token1_name else f"Token1: {token1_name}", callback_data=Command.SET_TOKEN1.value)
+        ])
 
     # Assume token name to be set along with address (if there is a name, there will be an address.)
-    if buy_token_name and sell_token_name:
+    if token0_name and token1_name:
         # Chart buttons
         buttons.append([
-            InlineKeyboardButton(f"{buy_token_name}/{sell_token_name} 📈", callback_data=Command.SHOW_BUY_CHART.value),
-            InlineKeyboardButton(f"{sell_token_name}/{buy_token_name} 📈", callback_data=Command.SHOW_SELL_CHART.value)
+            InlineKeyboardButton(f"{token0_name}/{token1_name} 📈", callback_data=Command.SHOW_TOKEN0_CHART.value),
+            InlineKeyboardButton(f"{token1_name}/{token0_name} 📈", callback_data=Command.SHOW_TOKEN1_CHART.value)
         ])
     
         # Buy/Sell buttons
         buttons.append([
-            InlineKeyboardButton(f"Buy {buy_token_name}", callback_data=Command.SET_BUY_TOKEN.value),
-            InlineKeyboardButton(f"Sell {buy_token_name}", callback_data=Command.SET_SELL_TOKEN.value)
+            InlineKeyboardButton(f"Buy {token0_name}", callback_data=Command.SET_TOKEN0.value),
+            InlineKeyboardButton(f"Sell {token0_name}", callback_data=Command.SET_TOKEN1.value)
         ])
 
     return InlineKeyboardMarkup(buttons)
@@ -117,7 +119,7 @@ async def set_chain(update: Update, user_id: int, text: str):
     chain_id = text
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET chain_id=%s, buy_token_address=NULL, sell_token_address=NULL, buy_token_name=NULL, sell_token_name=NULL WHERE id=%s", (chain_id, user_id))
+    cursor.execute("UPDATE users SET chain_id=%s, token0_address=NULL, token1_address=NULL, token0_name=NULL, token1_name=NULL WHERE id=%s", (chain_id, user_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -172,23 +174,23 @@ async def set_slippage(update: Update, user_id: int, text: str):
     unset_user_current_stage(user_id)
 
 
-async def handle_set_buy_token(query):
-    """Handle set buy token command"""
+async def handle_set_token0(query):
+    """Handle set token 0 command"""
     # TODO: Hide the button by default if chain not set
     user_id = query.from_user.id
-    await query.edit_message_text(f"Paste the address of buy token:")
-    set_user_current_stage(user_id, Command.SET_BUY_TOKEN, 1)
+    await query.edit_message_text(f"Paste token address:")
+    set_user_current_stage(user_id, Command.SET_TOKEN0, 1)
 
 
-async def set_buy_token(update: Update, user_id: int, text: str):
+async def set_token0(update: Update, user_id: int, text: str):
     # Get user
     user = get_user(user_id)
     assert user is not None
 
-    # Disallow setting same as sell token
+    # Disallow setting same as token 1
     token_address = text
-    sell_token_address: str | None = user.get("sell_token_address")
-    if sell_token_address and token_address.lower() == sell_token_address.lower():
+    token1_address: str | None = user.get("token1_address")
+    if token1_address and token_address.lower() == token1_address.lower():
         await update.message.reply_text(
             f"Cannot be the same address as your sell token. Please enter another address."
         )
@@ -206,7 +208,7 @@ async def set_buy_token(update: Update, user_id: int, text: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE users SET buy_token_address=%s, buy_token_name=%s WHERE id=%s",
+        "UPDATE users SET token0_address=%s, token0_name=%s WHERE id=%s",
         (token_address.lower(), token_name, user_id),
     )
     conn.commit()
@@ -221,27 +223,27 @@ async def set_buy_token(update: Update, user_id: int, text: str):
     unset_user_current_stage(user_id)
 
 
-async def handle_set_sell_token(query):
+async def handle_set_token1(query):
     """Handle set sell token command"""
     # TODO: Hide the button by default if chain not set
     user = query.from_user
     user_id = user.id
     assert user is not None
-    await query.edit_message_text(f"Paste the address of sell token:")
-    set_user_current_stage(user_id, Command.SET_SELL_TOKEN, 1)
+    await query.edit_message_text(f"Paste token address:")
+    set_user_current_stage(user_id, Command.SET_TOKEN1, 1)
 
 
-async def set_sell_token(update: Update, user_id: int, text: str):
+async def set_token1(update: Update, user_id: int, text: str):
     # Get user
     user = get_user(user_id)
     assert user is not None
 
-    # Disallow setting same as buy token
+    # Disallow setting same as token 0
     token_address = text
-    buy_token_address: str | None = user.get("buy_token_address")
-    if buy_token_address and token_address.lower() == buy_token_address.lower():
+    token0_address: str | None = user.get("token0_address")
+    if token0_address and token_address.lower() == token0_address.lower():
         await update.message.reply_text(
-            f"Cannot be the same address as your buy token. Please enter another address."
+            f"Cannot be the same address as your token 0. Please enter another address."
         )
         return
 
@@ -258,7 +260,7 @@ async def set_sell_token(update: Update, user_id: int, text: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE users SET sell_token_address=%s, sell_token_name=%s WHERE id=%s",
+        "UPDATE users SET token1_address=%s, token1_name=%s WHERE id=%s",
         (token_address.lower(), token_name, user_id),
     )
     conn.commit()
@@ -280,8 +282,8 @@ handlers: dict[str, Callable] = {
     Command.WALLET.value: handle_wallet,
     Command.SET_CHAIN.value: handle_set_chain,
     Command.SET_SLIPPAGE.value: handle_set_slippage,
-    Command.SET_BUY_TOKEN.value: handle_set_buy_token,
-    Command.SET_SELL_TOKEN.value: handle_set_sell_token,
+    Command.SET_TOKEN0.value: handle_set_token0,
+    Command.SET_TOKEN1.value: handle_set_token1,
 }
 
 
@@ -336,10 +338,10 @@ async def message_handler(update: Update, context) -> None:
         await set_chain(update, user_id, text)
     elif current_prompt["command"] == Command.SET_SLIPPAGE:
         await set_slippage(update, user_id, text)
-    elif current_prompt["command"] == Command.SET_BUY_TOKEN:
-        await set_buy_token(update, user_id, text)
-    elif current_prompt["command"] == Command.SET_SELL_TOKEN:
-        await set_sell_token(update, user_id, text)
+    elif current_prompt["command"] == Command.SET_TOKEN0:
+        await set_token0(update, user_id, text)
+    elif current_prompt["command"] == Command.SET_TOKEN1:
+        await set_token1(update, user_id, text)
 
 
 def main() -> None:
