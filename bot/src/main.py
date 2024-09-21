@@ -89,8 +89,21 @@ async def handle_set_chain(query):
     set_user_current_stage(user_id, Command.SET_CHAIN, 1)
 
 
-def set_chain(update: Update, user_id: int, text: str):
-    # TODO: Save to database
+async def set_chain(update: Update, user_id: int, text: str):
+    chain = text
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET chain_id=%s WHERE id=%s", (chain, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    # TODO: Show actual chain name?
+    await update.message.reply_text(
+        f"Your chain has been updated to {chain}!\n\nWhat else would you like to do today?",
+        reply_markup=main_menu_keyboard
+    )
+
     unset_user_current_stage(user_id)
 
 
@@ -176,12 +189,7 @@ async def message_handler(update: Update, context) -> None:
     text = update.message.text
 
     if current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1:
-        set_chain(update, user_id, text)
-        await update.message.reply_text(
-            f"Chain has been set to {text} Polygon (TODO: Change this)",
-            reply_markup=main_menu_keyboard,
-        )
-
+        await set_chain(update, user_id, text)
     elif current_prompt["command"] == Command.SET_SLIPPAGE:
         await set_slippage(update, user_id, text)
 
