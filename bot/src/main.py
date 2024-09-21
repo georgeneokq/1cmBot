@@ -13,6 +13,7 @@ from features.database import get_connection
 from eth_account import Account
 from features.database.user import get_user, add_user
 from features.wallet import get_wallet_details
+from wallet import withdraw_tokens
 from features.commands.types import Command
 from cache.user import (
     get_user_current_stage,
@@ -42,13 +43,14 @@ def main_menu_keyboard(user: dict):
     """
     buttons: list[list[InlineKeyboardButton]] = []
 
-    # Populate current configuration into button text
-    buttons.append([InlineKeyboardButton("Withdraw", callback_data=Command.WITHDRAW.value)])
-
-    # Get the chain name if we support it
+    # Get the chain name
     chain_id = user.get("chain_id", -1)
     chain_info = networks.get(chain_id)
     chain_name = chain_info["name"] if chain_info else chain_id
+
+    # Populate current configuration into button text
+    if chain_name:
+        buttons.append([InlineKeyboardButton("Withdraw", callback_data=Command.WITHDRAW.value)])
 
     slippage = user["slippage"]
     buttons.append([
@@ -113,6 +115,7 @@ async def show_main_menu(user: dict, context):
     text = ""
     text += f"Wallet Address: `{wallet_address}` (tap to copy)\n"
     text += "Send tokens to this address to deposit.\n"
+    text += "REMINDER: You need to deposit the gas token for your selected chain to perform withdrawals.\n"
 
     # If chain has been set, we can retrieve token balance for the user
     if chain_id:
@@ -165,20 +168,23 @@ async def show_main_menu(user: dict, context):
         chart = generate_chart(
             chain_id, token0_address, token0_name, token1_address, token1_name
         )
-        await context.bot.send_photo(
-            photo=chart,
-            chat_id=user_id,
-            caption=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu_keyboard(user),
-        )
-    else:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu_keyboard(user),
-        )
+        if chart is not None:
+            await context.bot.send_photo(
+                photo=chart,
+                chat_id=user_id,
+                caption=text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=main_menu_keyboard(user),
+            )
+            return
+
+    # In case there is no graph, we send a message without the photo
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=main_menu_keyboard(user),
+    )
 
 
 ### Command Handlers ###
@@ -203,7 +209,6 @@ async def handle_withdraw(query, context):
 
     # For each token that the user holds, create a new button to select it
     balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
-    buttons.append([InlineKeyboardButton('USDC', callback_data=USDC_ADDRESS)])
     for (token_address, amount_str) in balances.items():
         if amount_str != '0':
             token_info = oneinch.get_token_info(chain_id, token_address)
@@ -256,16 +261,27 @@ async def handle_withdraw_amount(data: str, user: dict, context):
     }
     current_withdraw_info = withdrawal[user_id]
     amount = current_withdraw_info["withdraw_amount"]
-    wallet_address = current_withdraw_info["withdraw_wallet_address"]
+    withdraw_wallet_address = current_withdraw_info["withdraw_wallet_address"]
     token_address = current_withdraw_info["withdraw_token_address"]
     
     oneinch = OneInchAPI()
     token_info = oneinch.get_token_info(user["chain_id"], token_address)
     token_name = token_info["symbol"]
-    text = f"Performing withdrawal of {amount}{token_name} to {wallet_address}"
+    text = f"Performing withdrawal of {amount}{token_name} to {withdraw_wallet_address}"
     await context.bot.send_message(chat_id=user_id, text=text)
 
-    # WAITING FOR API
+    chain_id = user["chain_id"]
+    rpc = networks.get(chain_id).get("rpc")
+    derivation_path = user["derivation_path"]
+    wallet_details = get_wallet_details(derivation_path)
+    print(wallet_details)
+    success = withdraw_tokens(rpc, chain_id, token_address, withdraw_wallet_address, wallet_details["private_key"])
+
+    if not success:
+        text = "Failed to withdraw funds"
+    else:
+        text = "Success!"
+    await context.bot.send_message(chat_id=user_id, text=text)
 
     # Finished withdrawal
     del withdrawal[user_id]
@@ -448,29 +464,6 @@ async def set_token1(update: Update, user_id: int, text: str, context):
     unset_user_current_stage(user_id)
 
 
-async def handle_show_token0_chart(query, context):
-    user_id = query.from_user.id
-    user = get_user(user_id)
-    assert user is not None
-
-    # Get token addresses
-    chain_id = user["chain_id"]
-    token0_address = user["token0_address"]
-    token0_name = user["token0_name"]
-    token1_address = user["token1_address"]
-    token1_name = user["token1_name"]
-
-    chart = generate_chart(
-        chain_id, token0_address, token0_name, token1_address, token1_name
-    )
-
-    await context.bot.send_message(chat_id=user_id, text="Generating chart...")
-
-    await context.bot.send_photo(chat_id=user_id, photo=chart)
-
-    await context.bot.send_message(chat_id=user_id, text="Here you go!")
-
-
 async def handle_refresh(query, context):
     user_id = query.from_user.id
     user = get_user(user_id)
@@ -487,7 +480,6 @@ handlers: dict[str, Callable] = {
     Command.SET_SLIPPAGE.value: handle_set_slippage,
     Command.SET_TOKEN0.value: handle_set_token0,
     Command.SET_TOKEN1.value: handle_set_token1,
-    Command.SHOW_CHART.value: handle_show_token0_chart,
     Command.REFRESH.value: handle_refresh,
 }
 

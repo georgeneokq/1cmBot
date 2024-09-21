@@ -13,5 +13,6 @@ def get_wallet_details(derivation_path_int: int, master_key: str | None = None):
     account = Account.from_mnemonic(master_key, derivation_path_str)
     
     return {
-        "address": account.address
+        "address": account.address,
+        "private_key": account.key
     }

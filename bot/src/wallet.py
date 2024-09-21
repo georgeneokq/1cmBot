@@ -6,6 +6,7 @@ from time import sleep
 from constants import erc20_abi
 from util import parse_decimal, format_decimal
 from constants import networks
+from oneinch_api import OneInchAPI
 
 def initialise_w3(rpc):
     provider = rpc

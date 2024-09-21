@@ -7,7 +7,11 @@ from io import BytesIO
 def generate_chart(chain_id: int, token0_addr: str, token0_name: str, token1_addr: str, token1_name: str):
     oneinch = OneInchAPI()
     chart_data = oneinch.get_historical_chart_data(chain_id, token0_addr, token1_addr)  # "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "0xDC3326e71D45186F113a2F448984CA0e8D201995")
-    chart_data = chart_data["data"]
+    assert chart_data is not None
+    chart_data = chart_data.get("data")
+    if not chart_data:
+        return None
+
     times = [datetime.utcfromtimestamp(entry['time']) for entry in chart_data]
     values = [entry['value'] for entry in chart_data]
 
