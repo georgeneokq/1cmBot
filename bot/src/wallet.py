@@ -75,18 +75,6 @@ if __name__ == '__main__':
 
 
 
-"""
-	# selected_usdc = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
-	# selected_sgd = "0xdc3326e71d45186f113a2f448984ca0e8d201995"
-	calldata["to"] = Web3.to_checksum_address(calldata["to"])
-	# calldata["tx"]["to"] = Web3.to_checksum_address(calldata["tx"]["to"])
-	# calldata["tx"]["from"] = Web3.to_checksum_address(calldata["tx"]["from"])
-	# del calldata["tx"]["value"]
-	calldata["gasPrice"] = int(calldata["gasPrice"])
-	del calldata["value"]
-	print(calldata)
-"""
-
 
 
 """
