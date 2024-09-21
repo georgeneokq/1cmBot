@@ -1,5 +1,5 @@
 from os import getenv
-from typing import Callable
+from typing import Callable, TypedDict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -25,6 +25,14 @@ from constants import networks, USDC_ADDRESS
 
 Account.enable_unaudited_hdwallet_features()
 
+class WithdrawInfo(TypedDict):
+    withdraw_wallet_address: str
+    withdraw_token_address: str
+    withdraw_amount: float
+
+# Stores withdrawal data input by the user
+# Map user id to withdrawal info
+withdrawal: dict[int, WithdrawInfo] = {}
 
 # Define the main menu keyboard layout
 def main_menu_keyboard(user: dict):
@@ -35,29 +43,23 @@ def main_menu_keyboard(user: dict):
     buttons: list[list[InlineKeyboardButton]] = []
 
     # Populate current configuration into button text
-    buttons.append([InlineKeyboardButton("Wallet", callback_data=Command.WALLET.value)])
+    buttons.append([InlineKeyboardButton("Withdraw", callback_data=Command.WITHDRAW.value)])
 
     # Get the chain name if we support it
     chain_id = user.get("chain_id", -1)
     chain_info = networks.get(chain_id)
     chain_name = chain_info["name"] if chain_info else chain_id
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                "Set Chain" if not chain_id else f"Network: {chain_name}",
-                callback_data=Command.SET_CHAIN.value,
-            )
-        ]
-    )
 
     slippage = user["slippage"]
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value
-            )
-        ]
-    )
+    buttons.append([
+        InlineKeyboardButton(
+            "Set Chain" if not chain_id else f"Network: {chain_name}",
+            callback_data=Command.SET_CHAIN.value,
+        ),
+        InlineKeyboardButton(
+            f"Slippage: {slippage}%", callback_data=Command.SET_SLIPPAGE.value
+        )
+    ])
 
     # Only if a chain has been chosen, the user can set the token addresses
     token0_name = user.get("token0_name")
@@ -78,16 +80,6 @@ def main_menu_keyboard(user: dict):
 
     # Assume token name to be set along with address (if there is a name, there will be an address.)
     if token0_name and token1_name:
-        # Chart buttons
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    f"Current Price 📈",
-                    callback_data=Command.SHOW_CHART.value,
-                ),
-            ]
-        )
-
         # Buy/Sell buttons
         buttons.append(
             [
@@ -120,6 +112,7 @@ async def show_main_menu(user: dict, context):
 
     text = ""
     text += f"Wallet Address: `{wallet_address}` (tap to copy)\n"
+    text += "Send tokens to this address to deposit.\n"
 
     # If chain has been set, we can retrieve token balance for the user
     if chain_id:
@@ -192,33 +185,95 @@ async def show_main_menu(user: dict, context):
 
 
 #### WALLET ####
-async def handle_wallet(query):
+async def handle_withdraw(query, context):
     """
-    Wallet command: Display wallet address and balances
+    Withdraw command
     """
-    # TODO: Get actual token balances and show USD equivalent
-    # Get wallet details
     user_id = query.from_user.id
     user = get_user(user_id)
     assert user is not None
-    wallet = get_wallet_details(user["derivation_path"])
+    chain_id = user.get("chain_id")
+    derivation_path = user["derivation_path"]
+    wallet = get_wallet_details(derivation_path)
+    wallet_address = wallet["address"]
 
-    # Craft the reply message. TODO: Fix the copy paste
-    text = f"Wallet Address: `{wallet.get('address')}`"
+    oneinch = OneInchAPI()
 
-    try:
-        # Will raise an exception if the edit content is the same as current content. Ignore it
-        await query.edit_message_text(
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu_keyboard(user),
-        )
-    except Exception:
-        pass
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    # For each token that the user holds, create a new button to select it
+    balances: dict[str, str] = oneinch.get_token_balance(chain_id, wallet_address)
+    buttons.append([InlineKeyboardButton('USDC', callback_data=USDC_ADDRESS)])
+    for (token_address, amount_str) in balances.items():
+        if amount_str != '0':
+            token_info = oneinch.get_token_info(chain_id, token_address)
+            token_name = token_info.get("symbol", token_address)
+            buttons.append([InlineKeyboardButton(token_name, callback_data=token_address)])
+    
+    # Ask user to select token
+    set_user_current_stage(user_id, Command.WITHDRAW, 1)
+    markup = InlineKeyboardMarkup(buttons)
+    text = "Select token to withdraw"
+    await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
+
+async def handle_withdraw_selected_token(data: str, user: dict, context):
+    token_address = data
+    user_id = user["id"]
+    withdrawal[user_id] = { "withdraw_token_address": token_address }
+
+    # Prompt user to enter withdrawal address
+    text = "Enter wallet address to withdraw to:"
+    await context.bot.send_message(chat_id=user_id, text=text)
+
+    # Update next stage: Get withdrawal address
+    set_user_current_stage(user_id, Command.WITHDRAW, 2)
+
+async def handle_withdraw_wallet_address(data: str, user: dict, context):
+    wallet_address = data
+    user_id = user["id"]
+    current_withdraw_info = withdrawal[user_id]
+    withdrawal[user_id] = {
+        **current_withdraw_info,
+        "withdraw_wallet_address": wallet_address
+    }
+
+    # Prompt user to input withdrawal amount
+    text = "Enter amount to withdraw:"
+    await context.bot.send_message(chat_id=user_id, text=text)
+
+    # Update next stage: Get withdrawal amount
+    set_user_current_stage(user_id, Command.WITHDRAW, 3)
+
+async def handle_withdraw_amount(data: str, user: dict, context):
+    amount_str = data
+    amount = float(amount_str)
+    user_id = user["id"]
+
+    current_withdraw_info = withdrawal[user_id]
+    withdrawal[user_id] = {
+        **current_withdraw_info,
+        "withdraw_amount": amount
+    }
+    current_withdraw_info = withdrawal[user_id]
+    amount = current_withdraw_info["withdraw_amount"]
+    wallet_address = current_withdraw_info["withdraw_wallet_address"]
+    token_address = current_withdraw_info["withdraw_token_address"]
+    
+    oneinch = OneInchAPI()
+    token_info = oneinch.get_token_info(user["chain_id"], token_address)
+    token_name = token_info["symbol"]
+    text = f"Performing withdrawal of {amount}{token_name} to {wallet_address}"
+    await context.bot.send_message(chat_id=user_id, text=text)
+
+    # WAITING FOR API
+
+    # Finished withdrawal
+    del withdrawal[user_id]
+    unset_user_current_stage(user_id)
 
 
 #### SET CHAIN ####
-async def handle_set_chain(query):
+async def handle_set_chain(query, context):
     """
     Set Chain command: Get Chain ID
     """
@@ -229,7 +284,7 @@ async def handle_set_chain(query):
     set_user_current_stage(user_id, Command.SET_CHAIN, 1)
 
 
-async def set_chain(update: Update, user_id: int, text: str):
+async def set_chain(update: Update, user_id: int, text: str, context):
     chain_id = text
     conn = get_connection()
     cursor = conn.cursor()
@@ -256,7 +311,7 @@ async def set_chain(update: Update, user_id: int, text: str):
 
 
 #### Set slippage ####
-async def handle_set_slippage(query):
+async def handle_set_slippage(query, context):
     """
     Set Chain command: Get slippage percentage
     """
@@ -272,7 +327,7 @@ async def handle_set_slippage(query):
     set_user_current_stage(user_id, Command.SET_SLIPPAGE, 1)
 
 
-async def set_slippage(update: Update, user_id: int, text: str):
+async def set_slippage(update: Update, user_id: int, text: str, context):
     slippage = float(text)
     conn = get_connection()
     cursor = conn.cursor()
@@ -291,14 +346,14 @@ async def set_slippage(update: Update, user_id: int, text: str):
     unset_user_current_stage(user_id)
 
 
-async def handle_set_token0(query):
+async def handle_set_token0(query, context):
     """Handle set token 0 command"""
     user_id = query.from_user.id
     await query.edit_message_text(f"Paste token address:")
     set_user_current_stage(user_id, Command.SET_TOKEN0, 1)
 
 
-async def set_token0(update: Update, user_id: int, text: str):
+async def set_token0(update: Update, user_id: int, text: str, context):
     # Get user
     user = get_user(user_id)
     assert user is not None
@@ -341,7 +396,7 @@ async def set_token0(update: Update, user_id: int, text: str):
     unset_user_current_stage(user_id)
 
 
-async def handle_set_token1(query):
+async def handle_set_token1(query, context):
     """Handle set sell token command"""
     # TODO: Hide the button by default if chain not set
     user_id = query.from_user.id
@@ -349,7 +404,7 @@ async def handle_set_token1(query):
     set_user_current_stage(user_id, Command.SET_TOKEN1, 1)
 
 
-async def set_token1(update: Update, user_id: int, text: str):
+async def set_token1(update: Update, user_id: int, text: str, context):
     # Get user
     user = get_user(user_id)
     assert user is not None
@@ -425,9 +480,9 @@ async def handle_refresh(query, context):
 
 ### Command Handlers END ###
 
-# Map command to handler functions
+# Map command to stage 0 functions
 handlers: dict[str, Callable] = {
-    Command.WALLET.value: handle_wallet,
+    Command.WITHDRAW.value: handle_withdraw,
     Command.SET_CHAIN.value: handle_set_chain,
     Command.SET_SLIPPAGE.value: handle_set_slippage,
     Command.SET_TOKEN0.value: handle_set_token0,
@@ -459,11 +514,25 @@ async def button_callback(update: Update, context) -> None:
     query = update.callback_query
     await query.answer()
 
-    command = query.data
-    callback = handlers.get(command)
+    # If user is in nested stage
+    user_id = query.from_user.id
+    data = query.data
+    command_stage = get_user_current_stage(user_id) or {}
+    command = command_stage.get("command")
+    stage = command_stage.get("stage")
 
-    if callback:
-        await callback(query, context=context)
+    if not (command and stage):
+        # If user on main menu
+        command = query.data
+        callback = handlers.get(command)
+
+        if callback:
+            await callback(query, context=context)
+    elif command == Command.WITHDRAW and stage == 1:
+        # Withdraw stage 1: data is token selected
+        user = get_user(user_id)
+        assert user is not None
+        await handle_withdraw_selected_token(data, user, context)
 
 
 async def message_handler(update: Update, context) -> None:
@@ -485,14 +554,18 @@ async def message_handler(update: Update, context) -> None:
 
     text = update.message.text
 
-    if current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1:
-        await set_chain(update, user_id, text)
+    if current_prompt["command"] == Command.WITHDRAW and current_prompt["stage"] == 2:
+        await handle_withdraw_wallet_address(text, user, context=context)
+    elif current_prompt["command"] == Command.WITHDRAW and current_prompt["stage"] == 3:
+        await handle_withdraw_amount(text, user, context=context)
+    elif current_prompt["command"] == Command.SET_CHAIN and current_prompt["stage"] == 1:
+        await set_chain(update, user_id, text, context=context)
     elif current_prompt["command"] == Command.SET_SLIPPAGE:
-        await set_slippage(update, user_id, text)
+        await set_slippage(update, user_id, text, context=context)
     elif current_prompt["command"] == Command.SET_TOKEN0:
-        await set_token0(update, user_id, text)
+        await set_token0(update, user_id, text, context=context)
     elif current_prompt["command"] == Command.SET_TOKEN1:
-        await set_token1(update, user_id, text)
+        await set_token1(update, user_id, text, context=context)
 
 
 def main() -> None:
