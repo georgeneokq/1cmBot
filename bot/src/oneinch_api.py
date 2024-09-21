@@ -19,7 +19,6 @@ class OneInchAPI:
         
 
     def _build_api_url(self, api_name, version_number, chain_id, method_name):
-        os.path
         return f"{self.api_base_url}/{api_name}/v{version_number}/{chain_id}/{method_name}"
 
     # def quote_swap_calldata()
